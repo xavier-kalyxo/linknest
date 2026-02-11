@@ -174,7 +174,9 @@ export async function sendMagicLink(
     ) {
       throw error;
     }
-    // Silently succeed to prevent email enumeration
+    // Log the actual error for debugging (visible in server logs)
+    console.error("[magic-link] Failed to send:", error);
+    return { error: "Unable to send sign-in email. Please try again later." };
   }
 
   return { success: "Check your email for a sign-in link." };

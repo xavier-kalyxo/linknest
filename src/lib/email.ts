@@ -1,5 +1,5 @@
 const EMAILIT_API_KEY = process.env.EMAILIT_API_KEY!;
-const FROM = process.env.EMAIL_FROM || "LinkNest <noreply@linknest.io>";
+const FROM = process.env.EMAIL_FROM || "LinkNest <noreply@linknest.click>";
 const APP_URL = process.env.AUTH_URL || "http://localhost:3000";
 
 async function sendEmail({
@@ -22,6 +22,7 @@ async function sendEmail({
 
   if (!res.ok) {
     const body = await res.text();
+    console.error(`[email] Emailit API error (${res.status}):`, body);
     throw new Error(`Emailit API error (${res.status}): ${body}`);
   }
 }
