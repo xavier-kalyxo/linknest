@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { pages, blocks } from "@/lib/db/schema";
+import { pages, blocks, workspaces } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { TemplateRenderer } from "@/components/templates/template-renderer";
+import type { ThemeTokens } from "@/lib/templates/theme";
 
 interface Props {
   params: Promise<{ username: string }>;
@@ -12,13 +13,17 @@ interface Props {
 export const revalidate = false;
 
 async function getPageData(slug: string) {
-  const [page] = await db
-    .select()
+  const result = await db
+    .select({
+      page: pages,
+      plan: workspaces.plan,
+    })
     .from(pages)
+    .innerJoin(workspaces, eq(pages.workspaceId, workspaces.id))
     .where(eq(pages.slug, slug))
     .limit(1);
 
-  return page ?? null;
+  return result[0] ?? null;
 }
 
 async function getPageBlocks(pageId: string) {
@@ -31,11 +36,13 @@ async function getPageBlocks(pageId: string) {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params;
-  const page = await getPageData(username);
+  const result = await getPageData(username);
 
-  if (!page) {
+  if (!result) {
     return { title: "Not Found" };
   }
+
+  const { page } = result;
 
   return {
     title: page.seoTitle || page.title,
@@ -52,13 +59,25 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PublicPage({ params }: Props) {
   const { username } = await params;
-  const page = await getPageData(username);
+  const result = await getPageData(username);
 
-  if (!page || !page.isPublished) {
+  if (!result || !result.page.isPublished) {
     notFound();
   }
 
+  const { page, plan } = result;
   const pageBlocks = await getPageBlocks(page.id);
 
-  return <TemplateRenderer page={page} blocks={pageBlocks} showReport />;
+  const theme = page.theme as Partial<ThemeTokens> | null;
+  const isPro = plan === "pro";
+  const showBadge = !(isPro && theme?.hideBranding);
+
+  return (
+    <TemplateRenderer
+      page={page}
+      blocks={pageBlocks}
+      showBadge={showBadge}
+      showReport
+    />
+  );
 }

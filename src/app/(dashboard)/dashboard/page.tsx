@@ -68,14 +68,13 @@ export default async function DashboardPage() {
               <div>
                 <h3 className="font-medium">{page.title}</h3>
                 <p className="mt-1 text-sm text-gray-500">
-                  linknest.com{getPublicPageUrl(page.slug)}
+                  linknest.click{getPublicPageUrl(page.slug)}
                 </p>
                 <span
-                  className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                    page.isPublished
+                  className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${page.isPublished
                       ? "bg-green-50 text-green-700"
                       : "bg-gray-100 text-gray-600"
-                  }`}
+                    }`}
                 >
                   {page.isPublished ? "Published" : "Draft"}
                 </span>

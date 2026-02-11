@@ -81,7 +81,7 @@ export function NewPageButton({
                   URL Slug
                 </label>
                 <div className="flex items-center rounded-lg border border-gray-200 px-3 py-2">
-                  <span className="text-sm text-gray-400">linknest.com/@</span>
+                  <span className="text-sm text-gray-400">linknest.click/@</span>
                   <input
                     type="text"
                     value={slug}

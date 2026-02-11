@@ -16,13 +16,16 @@ export function LinkBlock({ block }: { block: Block }) {
       style={{
         fontFamily: "var(--ln-font-body)",
         fontSize: "var(--ln-font-size-base)",
-        color: "var(--ln-color-primary)",
-        backgroundColor: "var(--ln-color-surface)",
+        color: "var(--ln-btn-text)",
+        backgroundColor: "var(--ln-btn-bg)",
         borderRadius: "var(--ln-btn-radius)",
         padding: "var(--ln-btn-py) var(--ln-btn-px)",
-        borderWidth: "var(--ln-border-width)",
-        borderColor: "var(--ln-border-color)",
+        borderWidth: "var(--ln-btn-border-w)",
+        borderColor: "var(--ln-btn-border-c)",
         borderStyle: "solid",
+        boxShadow: "var(--ln-btn-shadow)",
+        backdropFilter: "var(--ln-btn-backdrop)",
+        WebkitBackdropFilter: "var(--ln-btn-backdrop)",
       }}
     >
       {block.label || block.url}

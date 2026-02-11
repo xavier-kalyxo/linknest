@@ -162,6 +162,11 @@ export async function updateTheme(pageId: string, theme: Partial<ThemeTokens>) {
     }
   }
 
+  // Gate 4: Remove badge
+  if (theme.hideBranding === true && !hasFeature(plan, "remove_badge")) {
+    return { error: "Removing the badge requires a Pro plan" };
+  }
+
   // Merge with existing theme
   const currentTheme = (page.theme ?? {}) as Partial<ThemeTokens>;
   const mergedTheme = { ...currentTheme, ...theme, version: 1 };

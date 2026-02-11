@@ -3,16 +3,20 @@
 import { useCallback } from "react";
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages } from "@/lib/db/schema";
-import { updatePage } from "@/lib/actions/page";
+import type { ThemeTokens } from "@/lib/templates/theme";
+import { updatePage, updateTheme as saveTheme } from "@/lib/actions/page";
 
 type Page = InferSelectModel<typeof pages>;
 
 interface PageSettingsProps {
   page: Page;
+  plan: "free" | "pro";
+  theme: ThemeTokens;
   onPageChange: (updates: Partial<Page>) => void;
+  onThemeChange: (updates: Partial<ThemeTokens>) => void;
 }
 
-export function PageSettings({ page, onPageChange }: PageSettingsProps) {
+export function PageSettings({ page, plan, theme, onPageChange, onThemeChange }: PageSettingsProps) {
   const handleSave = useCallback(
     (field: string, value: string) => {
       onPageChange({ [field]: value } as Partial<Page>);
@@ -92,7 +96,7 @@ export function PageSettings({ page, onPageChange }: PageSettingsProps) {
       <section>
         <h3 className="mb-3 text-sm font-semibold">Public URL</h3>
         <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-          <span className="text-sm text-gray-500">linknest.com/@{page.slug}</span>
+          <span className="text-sm text-gray-500">linknest.click/@{page.slug}</span>
           <button
             onClick={() => {
               navigator.clipboard.writeText(
@@ -105,6 +109,30 @@ export function PageSettings({ page, onPageChange }: PageSettingsProps) {
           </button>
         </div>
       </section>
+
+      {/* Branding */}
+      {plan === "pro" && (
+        <section>
+          <h3 className="mb-3 text-sm font-semibold">Branding</h3>
+          <label className="flex items-center justify-between gap-3">
+            <div>
+              <span className="text-sm">Hide &quot;Made with LinkNest&quot;</span>
+              <p className="text-xs text-gray-400">
+                Remove the LinkNest badge from your public page
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={theme.hideBranding ?? false}
+              onChange={(e) => {
+                onThemeChange({ hideBranding: e.target.checked });
+                saveTheme(page.id, { hideBranding: e.target.checked });
+              }}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+          </label>
+        </section>
+      )}
     </div>
   );
 }

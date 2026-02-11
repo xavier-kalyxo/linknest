@@ -100,14 +100,16 @@ export function LivePreview({ page, blocks, theme }: LivePreviewProps) {
             </div>
 
             {/* Badge */}
-            <div className="mt-8 text-center">
-              <span
-                className="text-[10px]"
-                style={{ color: "var(--ln-color-text-muted)" }}
-              >
-                Made with LinkNest
-              </span>
-            </div>
+            {!theme.hideBranding && (
+              <div className="mt-8 text-center">
+                <span
+                  className="text-[10px]"
+                  style={{ color: "var(--ln-color-text-muted)" }}
+                >
+                  Made with LinkNest
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>

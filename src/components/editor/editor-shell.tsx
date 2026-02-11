@@ -65,7 +65,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
           </Link>
           <span className="text-sm font-medium">{pageState.title}</span>
         </div>
-        <PublishBar page={pageState} theme={theme} />
+        <PublishBar page={pageState} theme={theme} onPageChange={handlePageUpdate} />
       </header>
 
       {/* Main editor area */}
@@ -110,7 +110,10 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
             {activeTab === "settings" && (
               <PageSettings
                 page={pageState}
+                plan={plan}
+                theme={theme}
                 onPageChange={handlePageUpdate}
+                onThemeChange={handleThemeUpdate}
               />
             )}
           </div>

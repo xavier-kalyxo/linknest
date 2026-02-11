@@ -63,7 +63,7 @@ export function OnboardingForm() {
         </label>
         <div className="mt-1">
           <div className="flex items-center rounded-lg border border-gray-300 focus-within:border-black focus-within:ring-1 focus-within:ring-black">
-            <span className="pl-3 text-sm text-gray-500">linknest.com/@</span>
+            <span className="pl-3 text-sm text-gray-500">linknest.click/@</span>
             <input
               id="slug"
               name="slug"
@@ -80,13 +80,12 @@ export function OnboardingForm() {
           </div>
           {slug.length >= 3 && (
             <p
-              className={`mt-1 text-xs ${
-                slugStatus.checking
+              className={`mt-1 text-xs ${slugStatus.checking
                   ? "text-gray-400"
                   : slugStatus.available
                     ? "text-green-600"
                     : "text-red-600"
-              }`}
+                }`}
             >
               {slugStatus.checking
                 ? "Checking availability..."

@@ -28,7 +28,7 @@ export function ThemeEditor({
   onThemeChange,
 }: ThemeEditorProps) {
   const buttonStyles = plan === "pro" ? PRO_BUTTON_STYLES : FREE_BUTTON_STYLES;
-  const allFonts = plan === "pro" ? [...SYSTEM_FONTS, ...GOOGLE_FONTS] : SYSTEM_FONTS;
+
 
   const handleChange = useCallback(
     (updates: Partial<ThemeTokens>) => {
@@ -165,11 +165,22 @@ export function ThemeEditor({
               }
               className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm"
             >
-              {allFonts.map((font) => (
-                <option key={font.id} value={font.value}>
-                  {font.name}
-                </option>
-              ))}
+              <optgroup label="Default Fonts">
+                {SYSTEM_FONTS.map((font) => (
+                  <option key={font.id} value={font.value}>
+                    {font.name}
+                  </option>
+                ))}
+              </optgroup>
+              {plan === "pro" && (
+                <optgroup label="Google Fonts">
+                  {GOOGLE_FONTS.map((font) => (
+                    <option key={font.id} value={font.value}>
+                      {font.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
           <div>
@@ -181,11 +192,22 @@ export function ThemeEditor({
               }
               className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm"
             >
-              {allFonts.map((font) => (
-                <option key={font.id} value={font.value}>
-                  {font.name}
-                </option>
-              ))}
+              <optgroup label="Default Fonts">
+                {SYSTEM_FONTS.map((font) => (
+                  <option key={font.id} value={font.value}>
+                    {font.name}
+                  </option>
+                ))}
+              </optgroup>
+              {plan === "pro" && (
+                <optgroup label="Google Fonts">
+                  {GOOGLE_FONTS.map((font) => (
+                    <option key={font.id} value={font.value}>
+                      {font.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
           {plan === "free" && (
@@ -218,20 +240,21 @@ export function ThemeEditor({
 
       {/* Border radius */}
       <section>
-        <h3 className="mb-3 text-sm font-semibold">Corner Radius</h3>
+        <h3 className={`mb-3 text-sm font-semibold ${theme.buttonStyle === "pill" ? "text-gray-300" : ""}`}>Corner Radius</h3>
         <input
           type="range"
           min={0}
           max={24}
-          value={theme.borderRadius}
+          disabled={theme.buttonStyle === "pill"}
+          value={theme.buttonRadius}
           onChange={(e) =>
-            handleChange({ borderRadius: Number(e.target.value) })
+            handleChange({ buttonRadius: Number(e.target.value) })
           }
-          className="w-full"
+          className="w-full disabled:opacity-40"
         />
-        <div className="flex justify-between text-xs text-gray-400">
+        <div className={`flex justify-between text-xs ${theme.buttonStyle === "pill" ? "text-gray-300" : "text-gray-400"}`}>
           <span>Sharp</span>
-          <span>{theme.borderRadius}px</span>
+          <span>{theme.buttonStyle === "pill" ? "Auto" : `${theme.buttonRadius}px`}</span>
           <span>Round</span>
         </div>
       </section>

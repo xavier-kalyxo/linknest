@@ -14,9 +14,10 @@ type Page = InferSelectModel<typeof pages>;
 interface PublishBarProps {
   page: Page;
   theme: ThemeTokens;
+  onPageChange: (updates: Partial<Page>) => void;
 }
 
-export function PublishBar({ page, theme }: PublishBarProps) {
+export function PublishBar({ page, theme, onPageChange }: PublishBarProps) {
   const router = useRouter();
   const [isPublishing, setIsPublishing] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -26,34 +27,48 @@ export function PublishBar({ page, theme }: PublishBarProps) {
     setIsPublishing(true);
     try {
       // Save current theme state before publishing
-      await updateTheme(page.id, theme);
+      const themeResult = await updateTheme(page.id, theme);
+      if (themeResult.error) {
+        alert(themeResult.error);
+        return;
+      }
+
       const result = await publishPage(page.id);
       if (result.error) {
         alert(result.error);
-      } else {
-        // Confetti on first publish
-        if (!wasPublished) {
-          import("canvas-confetti").then((confetti) => {
-            confetti.default({
-              particleCount: 100,
-              spread: 70,
-              origin: { y: 0.6 },
-            });
-          });
-          // Auto-open share modal on first publish
-          setShowShare(true);
-        }
-        router.refresh();
+        return;
       }
+
+      // Update client state so button switches to "Update"
+      onPageChange({ isPublished: true, publishedAt: new Date() });
+
+      // Confetti on first publish
+      if (!wasPublished) {
+        import("canvas-confetti").then((confetti) => {
+          confetti.default({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 },
+          });
+        });
+        // Auto-open share modal on first publish
+        setShowShare(true);
+      }
+
+      router.refresh();
+    } catch (err) {
+      alert("Something went wrong. Please try again.");
+      console.error("Publish error:", err);
     } finally {
       setIsPublishing(false);
     }
-  }, [page.id, page.isPublished, theme, router]);
+  }, [page.id, page.isPublished, theme, router, onPageChange]);
 
   const handleUnpublish = useCallback(async () => {
     await unpublishPage(page.id);
+    onPageChange({ isPublished: false });
     router.refresh();
-  }, [page.id, router]);
+  }, [page.id, router, onPageChange]);
 
   return (
     <>

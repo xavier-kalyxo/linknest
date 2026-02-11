@@ -49,6 +49,91 @@ export interface ThemeTokens {
   shadow: "none" | "sm" | "md" | "lg";
   backgroundEffect: "none" | "gradient" | "pattern" | "blur";
   backgroundGradient?: string;
+
+  // Branding
+  hideBranding?: boolean;
+}
+
+/**
+ * Compute button-specific CSS variables based on the active button style.
+ */
+function computeButtonStyleVars(theme: ThemeTokens): Record<string, string> {
+  switch (theme.buttonStyle) {
+    case "outline":
+      return {
+        "--ln-btn-bg": "transparent",
+        "--ln-btn-text": theme.colorPrimary,
+        "--ln-btn-border-w": "2px",
+        "--ln-btn-border-c": theme.colorPrimary,
+        "--ln-btn-shadow": "none",
+        "--ln-btn-backdrop": "none",
+      };
+
+    case "pill":
+      return {
+        "--ln-btn-bg": theme.colorSurface,
+        "--ln-btn-text": theme.colorPrimary,
+        "--ln-btn-border-w": "0px",
+        "--ln-btn-border-c": "transparent",
+        "--ln-btn-shadow": "none",
+        "--ln-btn-backdrop": "none",
+        "--ln-btn-radius": "999px",
+      };
+
+    case "shadow":
+      return {
+        "--ln-btn-bg": theme.colorSurface,
+        "--ln-btn-text": theme.colorPrimary,
+        "--ln-btn-border-w": "0px",
+        "--ln-btn-border-c": "transparent",
+        "--ln-btn-shadow": "0 4px 14px rgba(0,0,0,0.15)",
+        "--ln-btn-backdrop": "none",
+      };
+
+    case "neon":
+      return {
+        "--ln-btn-bg": "transparent",
+        "--ln-btn-text": theme.colorAccent,
+        "--ln-btn-border-w": "2px",
+        "--ln-btn-border-c": theme.colorAccent,
+        "--ln-btn-shadow": `0 0 12px ${theme.colorAccent}66, 0 0 4px ${theme.colorAccent}33`,
+        "--ln-btn-backdrop": "none",
+      };
+
+    case "glass": {
+      const isRgba = theme.colorSurface.startsWith("rgba");
+      return {
+        "--ln-btn-bg": isRgba ? theme.colorSurface : `${theme.colorSurface}20`,
+        "--ln-btn-text": theme.colorPrimary,
+        "--ln-btn-border-w": "1px",
+        "--ln-btn-border-c": isRgba ? "rgba(255,255,255,0.1)" : `${theme.colorSurface}30`,
+        "--ln-btn-shadow": "none",
+        "--ln-btn-backdrop": "blur(12px)",
+      };
+    }
+
+    case "ghost":
+    case "minimal":
+      return {
+        "--ln-btn-bg": "transparent",
+        "--ln-btn-text": theme.colorPrimary,
+        "--ln-btn-border-w": "0px",
+        "--ln-btn-border-c": "transparent",
+        "--ln-btn-shadow": "none",
+        "--ln-btn-backdrop": "none",
+      };
+
+    case "filled":
+    default:
+      return {
+        "--ln-btn-bg": theme.colorSurface,
+        "--ln-btn-text": theme.colorPrimary,
+        "--ln-btn-border-w": "0px",
+        "--ln-btn-border-c": "transparent",
+        "--ln-btn-shadow": "none",
+        "--ln-btn-backdrop": "none",
+      };
+  }
 }
 
 /**
@@ -83,6 +168,9 @@ export function themeToCssVars(theme: ThemeTokens): Record<string, string> {
     "--ln-btn-radius": `${theme.buttonRadius}px`,
     "--ln-btn-px": `${theme.buttonPaddingX}px`,
     "--ln-btn-py": `${theme.buttonPaddingY}px`,
+
+    // Button style vars (spread last so pill can override --ln-btn-radius)
+    ...computeButtonStyleVars(theme),
   };
 }
 
@@ -189,18 +277,18 @@ export const COLOR_PALETTES: ColorPalette[] = [
 // ─── System Fonts (Free Tier) ───────────────────────────────────────────────
 
 export const SYSTEM_FONTS = [
-  { id: "inter", name: "Inter", value: "Inter, system-ui, sans-serif" },
   { id: "georgia", name: "Georgia", value: "Georgia, serif" },
-  {
-    id: "system",
-    name: "System",
-    value: "system-ui, -apple-system, sans-serif",
-  },
-  { id: "mono", name: "Mono", value: "ui-monospace, monospace" },
   {
     id: "helvetica",
     name: "Helvetica",
     value: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+  },
+  { id: "inter", name: "Inter", value: "Inter, system-ui, sans-serif" },
+  { id: "mono", name: "Mono", value: "ui-monospace, monospace" },
+  {
+    id: "system",
+    name: "System",
+    value: "system-ui, -apple-system, sans-serif",
   },
   {
     id: "times",
@@ -212,36 +300,36 @@ export const SYSTEM_FONTS = [
 // ─── Google Fonts (Pro Tier) ────────────────────────────────────────────────
 
 export const GOOGLE_FONTS = [
-  { id: "poppins", name: "Poppins", value: "'Poppins', sans-serif" },
-  { id: "roboto", name: "Roboto", value: "'Roboto', sans-serif" },
-  { id: "lato", name: "Lato", value: "'Lato', sans-serif" },
-  { id: "open-sans", name: "Open Sans", value: "'Open Sans', sans-serif" },
-  { id: "montserrat", name: "Montserrat", value: "'Montserrat', sans-serif" },
-  { id: "raleway", name: "Raleway", value: "'Raleway', sans-serif" },
-  { id: "playfair", name: "Playfair Display", value: "'Playfair Display', serif" },
-  { id: "merriweather", name: "Merriweather", value: "'Merriweather', serif" },
-  { id: "lora", name: "Lora", value: "'Lora', serif" },
-  { id: "nunito", name: "Nunito", value: "'Nunito', sans-serif" },
-  { id: "work-sans", name: "Work Sans", value: "'Work Sans', sans-serif" },
-  { id: "rubik", name: "Rubik", value: "'Rubik', sans-serif" },
-  { id: "karla", name: "Karla", value: "'Karla', sans-serif" },
-  { id: "space-grotesk", name: "Space Grotesk", value: "'Space Grotesk', sans-serif" },
-  { id: "dm-sans", name: "DM Sans", value: "'DM Sans', sans-serif" },
-  { id: "dm-serif", name: "DM Serif Display", value: "'DM Serif Display', serif" },
-  { id: "josefin", name: "Josefin Sans", value: "'Josefin Sans', sans-serif" },
-  { id: "quicksand", name: "Quicksand", value: "'Quicksand', sans-serif" },
-  { id: "fira-sans", name: "Fira Sans", value: "'Fira Sans', sans-serif" },
-  { id: "source-serif", name: "Source Serif 4", value: "'Source Serif 4', serif" },
-  { id: "cabin", name: "Cabin", value: "'Cabin', sans-serif" },
+  { id: "archivo", name: "Archivo", value: "'Archivo', sans-serif" },
   { id: "barlow", name: "Barlow", value: "'Barlow', sans-serif" },
   { id: "bitter", name: "Bitter", value: "'Bitter', serif" },
-  { id: "libre-baskerville", name: "Libre Baskerville", value: "'Libre Baskerville', serif" },
+  { id: "cabin", name: "Cabin", value: "'Cabin', sans-serif" },
   { id: "crimson-text", name: "Crimson Text", value: "'Crimson Text', serif" },
+  { id: "dm-sans", name: "DM Sans", value: "'DM Sans', sans-serif" },
+  { id: "dm-serif", name: "DM Serif Display", value: "'DM Serif Display', serif" },
+  { id: "fira-sans", name: "Fira Sans", value: "'Fira Sans', sans-serif" },
   { id: "inconsolata", name: "Inconsolata", value: "'Inconsolata', monospace" },
   { id: "jetbrains-mono", name: "JetBrains Mono", value: "'JetBrains Mono', monospace" },
+  { id: "josefin", name: "Josefin Sans", value: "'Josefin Sans', sans-serif" },
+  { id: "karla", name: "Karla", value: "'Karla', sans-serif" },
+  { id: "lato", name: "Lato", value: "'Lato', sans-serif" },
+  { id: "libre-baskerville", name: "Libre Baskerville", value: "'Libre Baskerville', serif" },
+  { id: "lora", name: "Lora", value: "'Lora', serif" },
+  { id: "merriweather", name: "Merriweather", value: "'Merriweather', serif" },
+  { id: "montserrat", name: "Montserrat", value: "'Montserrat', sans-serif" },
+  { id: "nunito", name: "Nunito", value: "'Nunito', sans-serif" },
+  { id: "open-sans", name: "Open Sans", value: "'Open Sans', sans-serif" },
   { id: "overpass", name: "Overpass", value: "'Overpass', sans-serif" },
-  { id: "archivo", name: "Archivo", value: "'Archivo', sans-serif" },
+  { id: "playfair", name: "Playfair Display", value: "'Playfair Display', serif" },
+  { id: "poppins", name: "Poppins", value: "'Poppins', sans-serif" },
+  { id: "quicksand", name: "Quicksand", value: "'Quicksand', sans-serif" },
+  { id: "raleway", name: "Raleway", value: "'Raleway', sans-serif" },
+  { id: "roboto", name: "Roboto", value: "'Roboto', sans-serif" },
+  { id: "rubik", name: "Rubik", value: "'Rubik', sans-serif" },
   { id: "sora", name: "Sora", value: "'Sora', sans-serif" },
+  { id: "source-serif", name: "Source Serif 4", value: "'Source Serif 4', serif" },
+  { id: "space-grotesk", name: "Space Grotesk", value: "'Space Grotesk', sans-serif" },
+  { id: "work-sans", name: "Work Sans", value: "'Work Sans', sans-serif" },
 ];
 
 // ─── Button Styles ──────────────────────────────────────────────────────────
