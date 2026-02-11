@@ -101,6 +101,8 @@ export async function updatePage(input: z.infer<typeof updatePageSchema>) {
     .where(eq(pages.id, pageId))
     .returning();
 
+  revalidatePath(`/${page.slug}`);
+
   return { page: updated };
 }
 
@@ -176,6 +178,34 @@ export async function updateTheme(pageId: string, theme: Partial<ThemeTokens>) {
     .set({ theme: mergedTheme, updatedAt: new Date() })
     .where(eq(pages.id, pageId))
     .returning();
+
+  revalidatePath(`/${page.slug}`);
+
+  return { page: updated };
+}
+
+// ─── Reset Theme ─────────────────────────────────────────────────────────────
+
+export async function resetTheme(pageId: string) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { error: "Unauthorized" };
+  }
+
+  const result = await verifyPageOwnership(pageId, session.user.id);
+  if (!result) {
+    return { error: "Page not found" };
+  }
+
+  const { page } = result;
+
+  const [updated] = await db
+    .update(pages)
+    .set({ theme: {}, updatedAt: new Date() })
+    .where(eq(pages.id, pageId))
+    .returning();
+
+  revalidatePath(`/${page.slug}`);
 
   return { page: updated };
 }

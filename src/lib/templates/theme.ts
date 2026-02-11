@@ -1,5 +1,7 @@
 // src/lib/templates/theme.ts — ThemeTokens type definition and CSS pipeline
 
+import { getContrastColor } from "@/lib/contrast";
+
 export interface ThemeTokens {
   version: 1;
 
@@ -57,7 +59,10 @@ export interface ThemeTokens {
 /**
  * Compute button-specific CSS variables based on the active button style.
  */
-function computeButtonStyleVars(theme: ThemeTokens): Record<string, string> {
+export function computeButtonStyleVars(theme: ThemeTokens): Record<string, string> {
+  // Page-level shadow from the template — applied to styles without their own effect
+  const pageShadow = SHADOW_MAP[theme.shadow] ?? "none";
+
   switch (theme.buttonStyle) {
     case "outline":
       return {
@@ -65,7 +70,7 @@ function computeButtonStyleVars(theme: ThemeTokens): Record<string, string> {
         "--ln-btn-text": theme.colorPrimary,
         "--ln-btn-border-w": "2px",
         "--ln-btn-border-c": theme.colorPrimary,
-        "--ln-btn-shadow": "none",
+        "--ln-btn-shadow": pageShadow,
         "--ln-btn-backdrop": "none",
       };
 
@@ -75,7 +80,7 @@ function computeButtonStyleVars(theme: ThemeTokens): Record<string, string> {
         "--ln-btn-text": theme.colorPrimary,
         "--ln-btn-border-w": "0px",
         "--ln-btn-border-c": "transparent",
-        "--ln-btn-shadow": "none",
+        "--ln-btn-shadow": pageShadow,
         "--ln-btn-backdrop": "none",
         "--ln-btn-radius": "999px",
       };
@@ -130,7 +135,7 @@ function computeButtonStyleVars(theme: ThemeTokens): Record<string, string> {
         "--ln-btn-text": theme.colorPrimary,
         "--ln-btn-border-w": "0px",
         "--ln-btn-border-c": "transparent",
-        "--ln-btn-shadow": "none",
+        "--ln-btn-shadow": pageShadow,
         "--ln-btn-backdrop": "none",
       };
   }
@@ -348,3 +353,119 @@ export const PRO_BUTTON_STYLES = [
   "neon",
   "glass",
 ] as const;
+
+export const ALL_BUTTON_STYLES = PRO_BUTTON_STYLES;
+
+// ─── Block-Level Style Overrides ─────────────────────────────────────────────
+
+export const VALID_VARIANTS = ["primary", "secondary", "outline", "subtle"] as const;
+export type BlockVariant = (typeof VALID_VARIANTS)[number];
+
+export interface BlockStyleOverrides {
+  variant?: BlockVariant;
+  buttonStyle?: ThemeTokens["buttonStyle"];
+  bgColor?: string;
+  textColor?: string;
+  borderRadius?: number;
+  shadow?: "none" | "sm" | "md";
+}
+
+/**
+ * Resolve preset variant → partial style overrides derived from the active theme.
+ */
+function resolveVariant(
+  theme: ThemeTokens,
+  variant: BlockVariant,
+): Record<string, string> {
+  switch (variant) {
+    case "primary":
+      return {
+        backgroundColor: theme.colorSurface,
+        color: theme.colorPrimary,
+      };
+    case "secondary":
+      return {
+        backgroundColor: theme.colorSecondary + "20",
+        color: theme.colorText,
+      };
+    case "outline":
+      return {
+        backgroundColor: "transparent",
+        color: theme.colorText,
+        borderWidth: "1px",
+        borderStyle: "solid",
+        borderColor: theme.borderColor,
+      };
+    case "subtle":
+      return {
+        backgroundColor: theme.colorBackground,
+        color: theme.colorTextMuted,
+        borderWidth: "1px",
+        borderStyle: "solid",
+        borderColor: theme.borderColor + "60",
+      };
+  }
+}
+
+const SHADOW_MAP: Record<string, string> = {
+  none: "none",
+  sm: "0 1px 3px rgba(0,0,0,0.08)",
+  md: "0 4px 14px rgba(0,0,0,0.15)",
+  lg: "0 8px 30px rgba(0,0,0,0.2)",
+};
+
+/**
+ * Compute resolved inline styles for a single block based on its overrides.
+ * Returns Record<string, string> (framework-agnostic).
+ * Cast to React.CSSProperties at component boundaries.
+ */
+export function computeBlockResolvedStyle(
+  theme: ThemeTokens,
+  overrides: BlockStyleOverrides,
+): Record<string, string> {
+  if (!overrides || Object.keys(overrides).length === 0) {
+    return {};
+  }
+
+  // 1. Start from variant if set
+  let style: Record<string, string> = {};
+  if (overrides.variant) {
+    style = resolveVariant(theme, overrides.variant);
+  }
+
+  // 2. Apply buttonStyle override — compute vars and map to inline props
+  if (overrides.buttonStyle) {
+    const btnVars = computeButtonStyleVars({
+      ...theme,
+      buttonStyle: overrides.buttonStyle,
+    });
+    if (btnVars["--ln-btn-bg"]) style.backgroundColor = btnVars["--ln-btn-bg"];
+    if (btnVars["--ln-btn-text"]) style.color = btnVars["--ln-btn-text"];
+    if (btnVars["--ln-btn-border-w"]) style.borderWidth = btnVars["--ln-btn-border-w"];
+    if (btnVars["--ln-btn-border-c"]) style.borderColor = btnVars["--ln-btn-border-c"];
+    if (btnVars["--ln-btn-shadow"]) style.boxShadow = btnVars["--ln-btn-shadow"];
+    if (btnVars["--ln-btn-backdrop"]) style.backdropFilter = btnVars["--ln-btn-backdrop"];
+    if (btnVars["--ln-btn-radius"]) style.borderRadius = btnVars["--ln-btn-radius"];
+  }
+
+  // 3. Layer Pro custom overrides on top (these win over buttonStyle)
+  if (overrides.bgColor) {
+    style.backgroundColor = overrides.bgColor;
+  }
+  if (overrides.textColor) {
+    style.color = overrides.textColor;
+  }
+  if (overrides.borderRadius !== undefined) {
+    style.borderRadius = `${overrides.borderRadius}px`;
+  }
+  if (overrides.shadow) {
+    style.boxShadow = SHADOW_MAP[overrides.shadow] ?? "none";
+  }
+
+  // 4. Auto-contrast: if bgColor set but textColor missing, flip text
+  if (overrides.bgColor && !overrides.textColor) {
+    style.color = getContrastColor(overrides.bgColor);
+  }
+
+  return style;
+}

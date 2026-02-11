@@ -2,10 +2,11 @@
 
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages, blocks as blocksSchema } from "@/lib/db/schema";
-import type { ThemeTokens } from "@/lib/templates/theme";
-import { themeToCssVars } from "@/lib/templates/theme";
+import type { ThemeTokens, BlockStyleOverrides } from "@/lib/templates/theme";
+import { themeToCssVars, computeBlockResolvedStyle } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { BlockRenderer } from "@/components/blocks/block-renderer";
+import { AvatarFallback } from "@/components/ui/avatar-fallback";
 
 type Page = InferSelectModel<typeof pages>;
 type Block = InferSelectModel<typeof blocksSchema>;
@@ -14,6 +15,16 @@ interface LivePreviewProps {
   page: Page;
   blocks: Block[];
   theme: ThemeTokens;
+}
+
+function resolveBlockStyle(
+  theme: ThemeTokens,
+  block: Block,
+): React.CSSProperties | undefined {
+  const content = block.content as Record<string, unknown> | null;
+  const overrides = content?.styleOverrides as BlockStyleOverrides | undefined;
+  if (!overrides || Object.keys(overrides).length === 0) return undefined;
+  return computeBlockResolvedStyle(theme, overrides) as React.CSSProperties;
 }
 
 export function LivePreview({ page, blocks, theme }: LivePreviewProps) {
@@ -54,21 +65,25 @@ export function LivePreview({ page, blocks, theme }: LivePreviewProps) {
           >
             {/* Avatar + Bio */}
             <div className="mb-8 flex flex-col items-center text-center">
-              {page.avatarUrl && (
-                <div className="mb-4 h-16 w-16 overflow-hidden rounded-full">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={page.avatarUrl}
-                    alt={page.title}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-              )}
+              <div className="mb-4">
+                <AvatarFallback
+                  avatarUrl={page.avatarUrl}
+                  name={page.title}
+                  slug={page.slug}
+                  size={80}
+                />
+              </div>
+              <p
+                className="mb-1 text-xs font-medium"
+                style={{ color: "var(--ln-color-text-muted)" }}
+              >
+                @{page.slug}
+              </p>
               <h1
                 style={{
                   fontFamily: "var(--ln-font-heading)",
                   fontWeight: "var(--ln-font-weight-heading)",
-                  fontSize: `calc(var(--ln-font-size-base) * 1.4)`,
+                  fontSize: `calc(var(--ln-font-size-base) * 1.2)`,
                   color: "var(--ln-color-text)",
                 }}
               >
@@ -76,10 +91,10 @@ export function LivePreview({ page, blocks, theme }: LivePreviewProps) {
               </h1>
               {page.bio && (
                 <p
-                  className="mt-2"
+                  className="mt-1"
                   style={{
                     color: "var(--ln-color-text-muted)",
-                    fontSize: "0.875rem",
+                    fontSize: "0.8125rem",
                   }}
                 >
                   {page.bio}
@@ -95,7 +110,11 @@ export function LivePreview({ page, blocks, theme }: LivePreviewProps) {
               {sorted
                 .filter((b) => b.isVisible)
                 .map((block) => (
-                  <BlockRenderer key={block.id} block={block} />
+                  <BlockRenderer
+                    key={block.id}
+                    block={block}
+                    resolvedStyle={resolveBlockStyle(theme, block)}
+                  />
                 ))}
             </div>
 

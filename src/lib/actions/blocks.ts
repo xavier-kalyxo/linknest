@@ -10,6 +10,8 @@ import { getUserWorkspace } from "@/lib/queries";
 import { checkBannedUrl } from "@/lib/safe-browsing";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import { getLimit, type PlanId } from "@/lib/entitlements";
+import { type BlockStyleOverrides } from "@/lib/templates/theme";
+import { validateStyleOverrides } from "./block-validation";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
 
@@ -109,6 +111,8 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
     })
     .returning();
 
+  revalidatePath(`/${page.slug}`);
+
   return { block };
 }
 
@@ -144,10 +148,21 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
     return { error: "Unauthorized" };
   }
 
+  const { workspace, page } = result;
+
   // Check for banned URL patterns
   if (parsed.data.url) {
     const banned = checkBannedUrl(parsed.data.url);
     if (banned) return { error: banned };
+  }
+
+  // Validate style overrides (only when content.styleOverrides is being written)
+  if (parsed.data.content) {
+    const overrides = (parsed.data.content as Record<string, unknown>).styleOverrides as BlockStyleOverrides | undefined;
+    if (overrides && Object.keys(overrides).length > 0) {
+      const err = validateStyleOverrides(overrides, workspace.plan as PlanId);
+      if (err) return { error: err };
+    }
   }
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -163,6 +178,8 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
     .set(updates)
     .where(eq(blocks.id, parsed.data.id))
     .returning();
+
+  revalidatePath(`/${page.slug}`);
 
   return { block: updated };
 }
@@ -191,6 +208,8 @@ export async function deleteBlock(blockId: string) {
   }
 
   await db.delete(blocks).where(eq(blocks.id, blockId));
+
+  revalidatePath(`/${result.page.slug}`);
 
   return { success: true };
 }
@@ -226,6 +245,8 @@ export async function reorderBlocks(
   );
 
   await Promise.all(updates);
+
+  revalidatePath(`/${page.slug}`);
 
   return { success: true };
 }

@@ -8,12 +8,17 @@ import { ImageBlock } from "./image-block";
 
 type Block = InferSelectModel<typeof blocks>;
 
-export function BlockRenderer({ block }: { block: Block }) {
+interface BlockRendererProps {
+  block: Block;
+  resolvedStyle?: React.CSSProperties;
+}
+
+export function BlockRenderer({ block, resolvedStyle }: BlockRendererProps) {
   if (!block.isVisible) return null;
 
   switch (block.type) {
     case "link":
-      return <LinkBlock block={block} />;
+      return <LinkBlock block={block} resolvedStyle={resolvedStyle} />;
     case "header":
       return <HeaderBlock block={block} />;
     case "text":

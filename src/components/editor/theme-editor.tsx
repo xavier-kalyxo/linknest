@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import {
   COLOR_PALETTES,
@@ -9,38 +9,88 @@ import {
   FREE_BUTTON_STYLES,
   PRO_BUTTON_STYLES,
 } from "@/lib/templates/theme";
-import { TEMPLATES, getTemplate } from "@/lib/templates";
-import { updateTheme as saveTheme } from "@/lib/actions/page";
+import { TEMPLATES } from "@/lib/templates";
+import { TemplateMiniPreview } from "./template-mini-preview";
 
 interface ThemeEditorProps {
   pageId: string;
   theme: ThemeTokens;
+  themeBase: ThemeTokens;
+  userOverrides: Partial<ThemeTokens>;
   plan: "free" | "pro";
   templateId: string;
+  previewMode: "effective" | "base";
+  onPreviewModeChange: (mode: "effective" | "base") => void;
   onThemeChange: (updates: Partial<ThemeTokens>) => void;
+  onTemplateChange: (templateId: string) => void;
+  onResetOverrides: () => void;
 }
 
 export function ThemeEditor({
   pageId,
   theme,
+  themeBase,
+  userOverrides,
   plan,
   templateId,
+  previewMode,
+  onPreviewModeChange,
   onThemeChange,
+  onTemplateChange,
+  onResetOverrides,
 }: ThemeEditorProps) {
   const buttonStyles = plan === "pro" ? PRO_BUTTON_STYLES : FREE_BUTTON_STYLES;
-
+  const hasOverrides = Object.keys(userOverrides).length > 0;
+  const [switchBanner, setSwitchBanner] = useState(false);
 
   const handleChange = useCallback(
     (updates: Partial<ThemeTokens>) => {
       onThemeChange(updates);
-      // Debounced save — for now, save immediately
-      saveTheme(pageId, updates);
     },
-    [pageId, onThemeChange],
+    [onThemeChange],
   );
 
   return (
     <div className="space-y-6">
+      {/* Preview mode toggle + Reset */}
+      {hasOverrides && (
+        <section className="flex items-center justify-between">
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            <input
+              type="checkbox"
+              checked={previewMode === "base"}
+              onChange={(e) =>
+                onPreviewModeChange(e.target.checked ? "base" : "effective")
+              }
+              className="h-3.5 w-3.5 rounded border-gray-300"
+            />
+            Preview theme defaults
+          </label>
+          <button
+            onClick={onResetOverrides}
+            className="text-xs text-red-500 hover:text-red-700"
+          >
+            Reset all
+          </button>
+        </section>
+      )}
+
+      {/* Template switch banner */}
+      {switchBanner && hasOverrides && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          Theme updated. Your custom colors were preserved.{" "}
+          <button
+            onClick={() => {
+              onResetOverrides();
+              setSwitchBanner(false);
+            }}
+            className="font-medium underline"
+          >
+            Reset to Theme Defaults
+          </button>
+        </div>
+      )}
+
       {/* Template picker */}
       <section>
         <h3 className="mb-3 text-sm font-semibold">Template</h3>
@@ -54,17 +104,8 @@ export function ThemeEditor({
                 key={tmpl.id}
                 disabled={isLocked}
                 onClick={() => {
-                  // Switch template: update layout tokens from template defaults
-                  // but preserve user's color customizations
-                  const defaults = tmpl.defaultTheme;
-                  handleChange({
-                    borderRadius: defaults.borderRadius,
-                    buttonStyle: defaults.buttonStyle,
-                    buttonRadius: defaults.buttonRadius,
-                    shadow: defaults.shadow,
-                    backgroundEffect: defaults.backgroundEffect,
-                    backgroundGradient: defaults.backgroundGradient,
-                  });
+                  onTemplateChange(tmpl.id);
+                  if (hasOverrides) setSwitchBanner(true);
                 }}
                 className={`relative rounded-lg border-2 p-3 text-left text-xs transition-colors ${
                   isActive
@@ -74,14 +115,8 @@ export function ThemeEditor({
                       : "border-gray-200 hover:border-gray-400"
                 }`}
               >
-                <div
-                  className="mb-2 h-8 w-full rounded"
-                  style={{
-                    backgroundColor: tmpl.defaultTheme.colorBackground,
-                    border: `1px solid ${tmpl.defaultTheme.borderColor}`,
-                  }}
-                />
-                <span className="font-medium">{tmpl.name}</span>
+                <TemplateMiniPreview template={tmpl} />
+                <span className="mt-2 block font-medium">{tmpl.name}</span>
                 {isLocked && (
                   <span className="absolute right-2 top-2 rounded bg-gray-800 px-1.5 py-0.5 text-[9px] font-bold text-white">
                     PRO

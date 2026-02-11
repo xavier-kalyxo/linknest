@@ -1,10 +1,11 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { blocks as blocksSchema, pages } from "@/lib/db/schema";
 import type { LayoutType } from "@/lib/templates";
-import type { ThemeTokens } from "@/lib/templates/theme";
-import { themeToCssVars } from "@/lib/templates/theme";
+import type { ThemeTokens, BlockStyleOverrides } from "@/lib/templates/theme";
+import { themeToCssVars, computeBlockResolvedStyle } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
 import { BlockRenderer } from "@/components/blocks/block-renderer";
+import { AvatarFallback } from "@/components/ui/avatar-fallback";
 
 type Page = InferSelectModel<typeof pages>;
 type Block = InferSelectModel<typeof blocksSchema>;
@@ -14,6 +15,7 @@ interface TemplateRendererProps {
   blocks: Block[];
   showBadge?: boolean;
   showReport?: boolean;
+  isPreview?: boolean;
 }
 
 export function TemplateRenderer({
@@ -21,6 +23,7 @@ export function TemplateRenderer({
   blocks,
   showBadge = true,
   showReport = false,
+  isPreview = false,
 }: TemplateRendererProps) {
   const template = getTemplate(page.templateId);
   const theme = {
@@ -46,6 +49,7 @@ export function TemplateRenderer({
         fontSize: "var(--ln-font-size-base)",
         lineHeight: "var(--ln-line-height-body)",
         ...backgroundStyle,
+        ...(isPreview ? { pointerEvents: "none" as const } : {}),
       } as React.CSSProperties}
     >
       <div
@@ -62,10 +66,10 @@ export function TemplateRenderer({
         <PageHeader page={page} />
 
         {/* Blocks */}
-        <BlockLayout layout={layout} blocks={blocks} />
+        <BlockLayout layout={layout} blocks={blocks} theme={theme} />
 
         {/* Badge + Report */}
-        <footer className="mt-12 flex flex-col items-center gap-2 text-center">
+        <footer className="mt-16 flex flex-col items-center gap-2 text-center">
           {showBadge && (
             <a
               href="/"
@@ -92,25 +96,26 @@ export function TemplateRenderer({
 
 function PageHeader({ page }: { page: Page }) {
   return (
-    <div className="mb-8 flex flex-col items-center text-center">
-      {page.avatarUrl && (
-        <div
-          className="mb-4 h-20 w-20 overflow-hidden rounded-full"
-          style={{ borderWidth: "var(--ln-border-width)", borderColor: "var(--ln-border-color)", borderStyle: "solid" }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={page.avatarUrl}
-            alt={page.title}
-            className="h-full w-full object-cover"
-          />
-        </div>
-      )}
+    <div className="mb-10 flex flex-col items-center text-center">
+      <div className="mb-4">
+        <AvatarFallback
+          avatarUrl={page.avatarUrl}
+          name={page.title}
+          slug={page.slug}
+          size={96}
+        />
+      </div>
+      <p
+        className="mb-1 text-sm font-medium"
+        style={{ color: "var(--ln-color-text-muted)" }}
+      >
+        @{page.slug}
+      </p>
       <h1
         style={{
           fontFamily: "var(--ln-font-heading)",
           fontWeight: "var(--ln-font-weight-heading)",
-          fontSize: `calc(var(--ln-font-size-base) * 1.5)`,
+          fontSize: `calc(var(--ln-font-size-base) * 1.25)`,
           color: "var(--ln-color-text)",
         }}
       >
@@ -118,7 +123,7 @@ function PageHeader({ page }: { page: Page }) {
       </h1>
       {page.bio && (
         <p
-          className="mt-2 max-w-md"
+          className="mt-1 max-w-md"
           style={{ color: "var(--ln-color-text-muted)" }}
         >
           {page.bio}
@@ -128,12 +133,24 @@ function PageHeader({ page }: { page: Page }) {
   );
 }
 
+function resolveBlockStyle(
+  theme: ThemeTokens,
+  block: Block,
+): React.CSSProperties | undefined {
+  const content = block.content as Record<string, unknown> | null;
+  const overrides = content?.styleOverrides as BlockStyleOverrides | undefined;
+  if (!overrides || Object.keys(overrides).length === 0) return undefined;
+  return computeBlockResolvedStyle(theme, overrides) as React.CSSProperties;
+}
+
 function BlockLayout({
   layout,
   blocks,
+  theme,
 }: {
   layout: LayoutType;
   blocks: Block[];
+  theme: ThemeTokens;
 }) {
   const sorted = [...blocks].sort((a, b) => a.position - b.position);
 
@@ -144,38 +161,28 @@ function BlockLayout({
         style={{ gap: "var(--ln-block-gap)", alignItems: "flex-start" }}
       >
         {sorted.map((block) => (
-          <BlockRenderer key={block.id} block={block} />
+          <BlockRenderer
+            key={block.id}
+            block={block}
+            resolvedStyle={resolveBlockStyle(theme, block)}
+          />
         ))}
       </div>
     );
   }
 
-  if (layout === "card-grid") {
+  if (layout === "card-grid" || layout === "bento-grid") {
     return (
       <div
-        className="grid grid-cols-1 sm:grid-cols-2"
+        className="flex flex-col items-center"
         style={{ gap: "var(--ln-block-gap)" }}
       >
         {sorted.map((block) => (
-          <BlockRenderer key={block.id} block={block} />
-        ))}
-      </div>
-    );
-  }
-
-  if (layout === "bento-grid") {
-    return (
-      <div
-        className="grid grid-cols-2 sm:grid-cols-3"
-        style={{ gap: "var(--ln-block-gap)" }}
-      >
-        {sorted.map((block, i) => (
-          <div
+          <BlockRenderer
             key={block.id}
-            className={i === 0 ? "col-span-2 sm:col-span-2" : ""}
-          >
-            <BlockRenderer block={block} />
-          </div>
+            block={block}
+            resolvedStyle={resolveBlockStyle(theme, block)}
+          />
         ))}
       </div>
     );
@@ -188,7 +195,11 @@ function BlockLayout({
       style={{ gap: "var(--ln-block-gap)" }}
     >
       {sorted.map((block) => (
-        <BlockRenderer key={block.id} block={block} />
+        <BlockRenderer
+          key={block.id}
+          block={block}
+          resolvedStyle={resolveBlockStyle(theme, block)}
+        />
       ))}
     </div>
   );

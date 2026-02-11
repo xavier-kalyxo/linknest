@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { updatePage, updateTheme as saveTheme } from "@/lib/actions/page";
+import { AvatarFallback } from "@/components/ui/avatar-fallback";
 
 type Page = InferSelectModel<typeof pages>;
 
@@ -17,6 +18,9 @@ interface PageSettingsProps {
 }
 
 export function PageSettings({ page, plan, theme, onPageChange, onThemeChange }: PageSettingsProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
   const handleSave = useCallback(
     (field: string, value: string) => {
       onPageChange({ [field]: value } as Partial<Page>);
@@ -25,8 +29,90 @@ export function PageSettings({ page, plan, theme, onPageChange, onThemeChange }:
     [page.id, onPageChange],
   );
 
+  const handleAvatarUpload = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("type", "avatar");
+
+        const res = await fetch("/api/upload/image", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Upload failed");
+        }
+
+        const { url } = await res.json();
+        onPageChange({ avatarUrl: url } as Partial<Page>);
+        await updatePage({ pageId: page.id, avatarUrl: url });
+      } catch (error) {
+        console.error("Avatar upload error:", error);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [page.id, onPageChange],
+  );
+
+  const handleRemoveAvatar = useCallback(async () => {
+    onPageChange({ avatarUrl: "" } as Partial<Page>);
+    await updatePage({ pageId: page.id, avatarUrl: "" });
+  }, [page.id, onPageChange]);
+
   return (
     <div className="space-y-6">
+      {/* Avatar */}
+      <section>
+        <h3 className="mb-3 text-sm font-semibold">Avatar</h3>
+        <div className="flex items-center gap-4">
+          <div
+            className="cursor-pointer"
+            onClick={() => !uploading && fileInputRef.current?.click()}
+          >
+            <AvatarFallback
+              avatarUrl={page.avatarUrl}
+              name={page.title}
+              slug={page.slug}
+              size={64}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="text-left text-xs font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
+            >
+              {uploading ? "Uploading..." : "Upload image"}
+            </button>
+            {page.avatarUrl && (
+              <button
+                onClick={handleRemoveAvatar}
+                disabled={uploading}
+                className="text-left text-xs text-gray-400 hover:text-red-500 disabled:opacity-50"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleAvatarUpload(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      </section>
+
       {/* Page info */}
       <section>
         <h3 className="mb-3 text-sm font-semibold">Page Info</h3>

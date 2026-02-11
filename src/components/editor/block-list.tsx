@@ -1,8 +1,15 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { InferSelectModel } from "drizzle-orm";
 import type { blocks as blocksSchema } from "@/lib/db/schema";
+import type { ThemeTokens } from "@/lib/templates/theme";
+import {
+  VALID_VARIANTS,
+  ALL_BUTTON_STYLES,
+  type BlockStyleOverrides,
+  type BlockVariant,
+} from "@/lib/templates/theme";
 import {
   DndContext,
   closestCenter,
@@ -33,9 +40,11 @@ interface BlockListProps {
   pageId: string;
   blocks: Block[];
   onBlocksChange: (blocks: Block[]) => void;
+  plan: "free" | "pro";
+  theme: ThemeTokens;
 }
 
-export function BlockList({ pageId, blocks, onBlocksChange }: BlockListProps) {
+export function BlockList({ pageId, blocks, onBlocksChange, plan, theme }: BlockListProps) {
   const [isAdding, setIsAdding] = useState(false);
   const sorted = [...blocks].sort((a, b) => a.position - b.position);
 
@@ -106,6 +115,7 @@ export function BlockList({ pageId, blocks, onBlocksChange }: BlockListProps) {
       if (updates.label !== undefined) clean.label = updates.label ?? undefined;
       if (updates.url !== undefined) clean.url = updates.url ?? "";
       if (updates.isVisible !== undefined) clean.isVisible = updates.isVisible;
+      if (updates.content !== undefined) clean.content = updates.content;
 
       await updateBlock(clean as Parameters<typeof updateBlock>[0]);
     },
@@ -160,6 +170,8 @@ export function BlockList({ pageId, blocks, onBlocksChange }: BlockListProps) {
               block={block}
               isFirst={index === 0}
               isLast={index === sorted.length - 1}
+              plan={plan}
+              theme={theme}
               onUpdate={handleUpdateBlock}
               onDelete={handleDeleteBlock}
               onMove={handleMoveBlock}
@@ -210,6 +222,8 @@ function SortableBlockItem({
   block,
   isFirst,
   isLast,
+  plan,
+  theme,
   onUpdate,
   onDelete,
   onMove,
@@ -217,6 +231,8 @@ function SortableBlockItem({
   block: Block;
   isFirst: boolean;
   isLast: boolean;
+  plan: "free" | "pro";
+  theme: ThemeTokens;
   onUpdate: (id: string, updates: Partial<Block>) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, direction: "up" | "down") => void;
@@ -229,6 +245,30 @@ function SortableBlockItem({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+
+  const content = (block.content ?? {}) as Record<string, unknown>;
+  const overrides = (content.styleOverrides ?? {}) as BlockStyleOverrides;
+
+  const handleStyleChange = useCallback(
+    (updates: Partial<BlockStyleOverrides>) => {
+      const newOverrides = { ...overrides, ...updates };
+      // Remove undefined/null keys
+      for (const k of Object.keys(newOverrides)) {
+        if ((newOverrides as Record<string, unknown>)[k] === undefined) {
+          delete (newOverrides as Record<string, unknown>)[k];
+        }
+      }
+      onUpdate(block.id, {
+        content: { ...content, styleOverrides: newOverrides } as Record<string, unknown>,
+      });
+    },
+    [block.id, content, overrides, onUpdate],
+  );
+
+  const handleResetStyle = useCallback(() => {
+    const { styleOverrides: _, ...rest } = content;
+    onUpdate(block.id, { content: rest as Record<string, unknown> });
+  }, [block.id, content, onUpdate]);
 
   return (
     <div
@@ -342,6 +382,221 @@ function SortableBlockItem({
               className="rounded"
             />
           </div>
+
+          {/* Block style editor — link blocks only */}
+          {block.type === "link" && (
+            <BlockStyleEditor
+              overrides={overrides}
+              plan={plan}
+              theme={theme}
+              onChange={handleStyleChange}
+              onReset={handleResetStyle}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Block Style Editor ──────────────────────────────────────────────────────
+
+function BlockStyleEditor({
+  overrides,
+  plan,
+  theme,
+  onChange,
+  onReset,
+}: {
+  overrides: BlockStyleOverrides;
+  plan: "free" | "pro";
+  theme: ThemeTokens;
+  onChange: (updates: Partial<BlockStyleOverrides>) => void;
+  onReset: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const colorDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const handleColorChange = useCallback(
+    (key: "bgColor" | "textColor", value: string) => {
+      clearTimeout(colorDebounceRef.current);
+      colorDebounceRef.current = setTimeout(() => {
+        onChange({ [key]: value });
+      }, 500);
+    },
+    [onChange],
+  );
+
+  const hasOverrides = Object.keys(overrides).length > 0;
+
+  return (
+    <div className="border-t border-gray-100 pt-3">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center justify-between text-xs font-medium text-gray-500"
+      >
+        <span>Style</span>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="currentColor"
+          className={`transition-transform ${isOpen ? "rotate-180" : ""}`}
+        >
+          <path d="M6 8L2 4h8z" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="mt-2 space-y-3">
+          {/* Variant presets (all plans) */}
+          <div>
+            <label className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+              Preset
+            </label>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <button
+                onClick={() => onChange({ variant: undefined })}
+                className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                  !overrides.variant
+                    ? "bg-gray-900 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                Default
+              </button>
+              {VALID_VARIANTS.map((v) => (
+                <button
+                  key={v}
+                  onClick={() => onChange({ variant: v })}
+                  className={`rounded px-2 py-1 text-[11px] font-medium capitalize transition-colors ${
+                    overrides.variant === v
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Pro controls */}
+          {plan === "pro" ? (
+            <>
+              {/* Button style */}
+              <div>
+                <label className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                  Button style
+                </label>
+                <select
+                  value={overrides.buttonStyle ?? ""}
+                  onChange={(e) =>
+                    onChange({
+                      buttonStyle: (e.target.value || undefined) as BlockStyleOverrides["buttonStyle"],
+                    })
+                  }
+                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-gray-400"
+                >
+                  <option value="">Theme default</option>
+                  {ALL_BUTTON_STYLES.map((s) => (
+                    <option key={s} value={s}>
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Colors */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                    Background
+                  </label>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <input
+                      type="color"
+                      defaultValue={overrides.bgColor ?? theme.colorSurface}
+                      onChange={(e) => handleColorChange("bgColor", e.target.value)}
+                      className="h-7 w-7 cursor-pointer rounded border border-gray-200"
+                    />
+                    <span className="text-[10px] text-gray-400">
+                      {overrides.bgColor ?? "auto"}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                    Text
+                  </label>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <input
+                      type="color"
+                      defaultValue={overrides.textColor ?? theme.colorText}
+                      onChange={(e) => handleColorChange("textColor", e.target.value)}
+                      className="h-7 w-7 cursor-pointer rounded border border-gray-200"
+                    />
+                    <span className="text-[10px] text-gray-400">
+                      {overrides.textColor ?? "auto"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Border radius */}
+              <div>
+                <label className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                  Border radius ({overrides.borderRadius ?? theme.buttonRadius}px)
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={32}
+                  value={overrides.borderRadius ?? theme.buttonRadius}
+                  onChange={(e) =>
+                    onChange({ borderRadius: Number(e.target.value) })
+                  }
+                  className="mt-1 w-full"
+                />
+              </div>
+
+              {/* Shadow */}
+              <div>
+                <label className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                  Shadow
+                </label>
+                <div className="mt-1 flex gap-1.5">
+                  {(["none", "sm", "md"] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => onChange({ shadow: s })}
+                      className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                        (overrides.shadow ?? "none") === s
+                          ? "bg-gray-900 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {s === "none" ? "None" : s.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-[11px] text-gray-400">
+              Upgrade to Pro for custom colors, button styles, and more.
+            </p>
+          )}
+
+          {/* Reset */}
+          {hasOverrides && (
+            <button
+              onClick={onReset}
+              className="text-[11px] text-gray-400 underline hover:text-gray-600"
+            >
+              Reset to theme default
+            </button>
+          )}
         </div>
       )}
     </div>

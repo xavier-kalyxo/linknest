@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { getUserWorkspace } from "@/lib/queries";
 import { r2Client, R2_BUCKET_NAME, getR2PublicUrl } from "@/lib/r2";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import sharp from "sharp";
+import { processImage } from "@/lib/image-processing";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -53,15 +53,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate type field (only "avatar" or omitted)
+    const typeField = formData.get("type") as string | null;
+    if (typeField && typeField !== "avatar") {
+      return NextResponse.json(
+        { error: "Invalid type" },
+        { status: 400 },
+      );
+    }
+
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Process with Sharp: resize to max 1200px width + convert to WebP
-    const processed = await sharp(buffer)
-      .resize(1200, undefined, { withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toBuffer();
+    // Process image (avatar → 512x512, default → max 1200px)
+    const processed = await processImage(buffer, typeField ?? undefined);
 
     // Generate R2 key
     const key = `${workspace.id}/${crypto.randomUUID()}.webp`;
