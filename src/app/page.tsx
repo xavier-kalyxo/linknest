@@ -1,28 +1,51 @@
-import Link from "next/link";
+import Nav from "@/components/marketing/nav";
+import Hero from "@/components/marketing/hero";
+import SocialProof from "@/components/marketing/social-proof";
+import TemplatesShowcase from "@/components/marketing/templates-showcase";
+import Features from "@/components/marketing/features";
+import PricingPreview from "@/components/marketing/pricing-preview";
+import FAQ from "@/components/marketing/faq";
+import FinalCTA from "@/components/marketing/final-cta";
+import Footer from "@/components/marketing/footer";
+import ScrollReveal from "@/components/marketing/scroll-reveal";
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-6">
-      <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-        LinkNest
-      </h1>
-      <p className="mt-4 max-w-md text-center text-lg text-gray-600">
-        The link-in-bio tool that makes you look professional in seconds.
-      </p>
-      <div className="mt-8 flex gap-4">
-        <Link
-          href="/signup"
-          className="rounded-lg bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-800"
-        >
-          Get Started Free
-        </Link>
-        <Link
-          href="/login"
-          className="rounded-lg border border-gray-300 px-6 py-3 text-sm font-medium hover:bg-gray-50"
-        >
-          Log In
-        </Link>
-      </div>
-    </main>
+    <>
+      {/* Skip to Content Link for Accessibility */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-coral focus:px-4 focus:py-2 focus:text-white focus:shadow-lg"
+      >
+        Skip to content
+      </a>
+
+      <Nav />
+
+      <main id="main-content">
+        <Hero />
+        <SocialProof />
+
+        <ScrollReveal>
+          <TemplatesShowcase />
+        </ScrollReveal>
+
+        <ScrollReveal>
+          <Features />
+        </ScrollReveal>
+
+        <ScrollReveal>
+          <PricingPreview />
+        </ScrollReveal>
+
+        <ScrollReveal>
+          <FAQ />
+        </ScrollReveal>
+
+        <FinalCTA />
+      </main>
+
+      <Footer />
+    </>
   );
 }

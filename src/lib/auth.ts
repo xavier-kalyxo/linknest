@@ -37,9 +37,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       id: "email",
       name: "Email",
       type: "email",
+      from: process.env.EMAIL_FROM || "LinkNest <noreply@linknest.click>",
+      maxAge: 24 * 60 * 60,
       sendVerificationRequest: async ({ identifier: email, url }) => {
         await sendMagicLinkEmail({ to: email, url });
       },
+      options: {},
     },
     Credentials({
       name: "credentials",

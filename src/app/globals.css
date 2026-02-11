@@ -1,26 +1,110 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ─── Brand Colors (from brand-system.md §3) ─── */
+  --color-coral: #E8614D;
+  --color-coral-hover: #D4533F;
+  --color-coral-active: #C0483A;
+  --color-indigo: #1A1A2E;
+  --color-lavender: #E8E0F0;
+  --color-sand: #F5F0EB;
+  --color-teal: #2EC4A2;
+  --color-amber: #F0A830;
+  --color-error: #D64045;
+
+  /* Neutrals */
+  --color-white: #FFFFFF;
+  --color-cloud: #F8F7F6;
+  --color-mist: #D4D0CC;
+  --color-slate: #6B6573;
+  --color-charcoal: #2D2B33;
+
+  /* ─── Typography ─── */
+  --font-serif: var(--font-heading);
+  --font-sans: var(--font-body);
+
+  /* ─── Shadows (from brand-system.md §6) ─── */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.03);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.06), 0 12px 36px rgba(0,0,0,0.06);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,0.08), 0 24px 48px rgba(0,0,0,0.08);
+
+  /* ─── Transitions ─── */
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Register brand palette with Tailwind 4 → bg-coral, text-indigo, etc. */
+  --color-coral: #E8614D;
+  --color-coral-hover: #D4533F;
+  --color-coral-active: #C0483A;
+  --color-indigo: #1A1A2E;
+  --color-lavender: #E8E0F0;
+  --color-sand: #F5F0EB;
+  --color-teal: #2EC4A2;
+  --color-amber: #F0A830;
+  --color-error: #D64045;
+  --color-white: #FFFFFF;
+  --color-cloud: #F8F7F6;
+  --color-mist: #D4D0CC;
+  --color-slate: #6B6573;
+  --color-charcoal: #2D2B33;
+
+  --font-serif: var(--font-heading);
+  --font-sans: var(--font-body);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ─── Scroll-Reveal (IntersectionObserver-driven) ─── */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s var(--ease-default), transform 0.6s var(--ease-default);
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ─── Glass (Navbar) ─── */
+.glass {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ─── Floating (Hero decorations) ─── */
+@keyframes float {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(10px, -15px); }
+}
+@keyframes float-reverse {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-10px, -12px); }
+}
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+.animate-float-reverse {
+  animation: float-reverse 8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float,
+  .animate-float-reverse {
+    animation: none;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-white);
+  color: var(--color-indigo);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
 }
