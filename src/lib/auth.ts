@@ -4,7 +4,7 @@ import GitHub from "next-auth/providers/github";
 import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
@@ -14,13 +14,62 @@ import {
 } from "@/lib/db/schema";
 import { sendMagicLinkEmail } from "@/lib/email";
 
+// DrizzleAdapter's internal queries fail on Vercel with opaque NeonDbError.
+// Override critical methods with direct Drizzle queries that work reliably.
+const baseAdapter = DrizzleAdapter(db, {
+  usersTable: users,
+  accountsTable: accounts,
+  sessionsTable: sessions,
+  verificationTokensTable: verificationTokens,
+});
+
+const adapter = {
+  ...baseAdapter,
+  async getUserByEmail(email: string) {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    return user ?? null;
+  },
+  async createVerificationToken(data: {
+    identifier: string;
+    token: string;
+    expires: Date;
+  }) {
+    const [created] = await db
+      .insert(verificationTokens)
+      .values(data)
+      .returning();
+    return created ?? null;
+  },
+  async useVerificationToken(data: { identifier: string; token: string }) {
+    const [existing] = await db
+      .select()
+      .from(verificationTokens)
+      .where(
+        and(
+          eq(verificationTokens.identifier, data.identifier),
+          eq(verificationTokens.token, data.token),
+        ),
+      )
+      .limit(1);
+    if (!existing) return null;
+    await db
+      .delete(verificationTokens)
+      .where(
+        and(
+          eq(verificationTokens.identifier, data.identifier),
+          eq(verificationTokens.token, data.token),
+        ),
+      );
+    return existing;
+  },
+};
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: DrizzleAdapter(db, {
-    usersTable: users,
-    accountsTable: accounts,
-    sessionsTable: sessions,
-    verificationTokensTable: verificationTokens,
-  }),
+  adapter,
   session: {
     strategy: "jwt",
   },
