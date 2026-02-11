@@ -58,30 +58,6 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* Company links */}
-          <div>
-            <h3 className="text-[13px] font-bold tracking-[0.04em] uppercase text-white/90">
-              Company
-            </h3>
-            <ul className="mt-4 space-y-3">
-              {[
-                { label: "About", href: "/about" },
-                { label: "Blog", href: "/blog" },
-                { label: "Support", href: "/support" },
-                { label: "Contact", href: "/contact" },
-              ].map((link) => (
-                <li key={link.label}>
-                  <Link
-                    href={link.href}
-                    className="text-sm text-white/60 transition-colors duration-200 hover:text-white"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
           {/* Legal links */}
           <div>
             <h3 className="text-[13px] font-bold tracking-[0.04em] uppercase text-white/90">
@@ -109,7 +85,16 @@ export default function Footer() {
         <div className="mt-12 border-t border-white/10 pt-8">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
             <p className="text-sm text-white/50">
-              &copy; {new Date().getFullYear()} LinkNest. All rights reserved.
+              &copy; {new Date().getFullYear()}{" "}
+              <a
+                href="https://oui.digital"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors duration-200 hover:text-white"
+              >
+                Oui Digital
+              </a>
+              . All rights reserved.
             </p>
             <div className="flex gap-6">
               <Link
