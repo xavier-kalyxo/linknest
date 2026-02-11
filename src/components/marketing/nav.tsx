@@ -2,6 +2,7 @@
    Server component. Mobile menu via <details>/<summary> (zero JS). */
 
 import Link from "next/link";
+import Image from "next/image";
 
 export default function Nav() {
   return (
@@ -11,23 +12,14 @@ export default function Nav() {
     >
       <div className="mx-auto max-w-[1200px] px-5 sm:px-8">
         <div className="flex h-16 items-center justify-between">
-          {/* Logo — coral circle with nested rings (brand mark) */}
-          <Link href="/" className="flex items-center gap-2.5">
-            <svg
-              width="32"
-              height="32"
-              viewBox="0 0 32 32"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-            >
-              <circle cx="16" cy="16" r="14" fill="#E8614D" />
-              <circle cx="16" cy="16" r="11" stroke="rgba(255,255,255,0.5)" strokeWidth="2" fill="none" />
-              <circle cx="16" cy="16" r="7" stroke="rgba(255,255,255,0.5)" strokeWidth="2" fill="none" />
-            </svg>
-            <span className="font-serif text-xl text-indigo">
-              LinkNest
-            </span>
+          <Link href="/" aria-label="LinkNest home">
+            <Image
+              src="/linknest-logo.svg"
+              alt="LinkNest"
+              width={122}
+              height={28}
+              priority
+            />
           </Link>
 
           {/* Desktop nav links — 15px, 500 weight, 0.01em tracking per brand */}

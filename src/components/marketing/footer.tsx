@@ -2,6 +2,7 @@
    Server component. */
 
 import Link from "next/link";
+import Image from "next/image";
 
 export default function Footer() {
   return (
@@ -11,23 +12,13 @@ export default function Footer() {
         <div className="grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand column */}
           <div className="sm:col-span-2 lg:col-span-1">
-            <Link href="/" className="flex items-center gap-2.5">
-              {/* Logo — coral circle with white stroke rings (matches nav) */}
-              <svg
-                width="32"
-                height="32"
-                viewBox="0 0 32 32"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-              >
-                <circle cx="16" cy="16" r="14" fill="white" />
-                <circle cx="16" cy="16" r="10" fill="none" stroke="white" strokeWidth="1.5" opacity="0.5" />
-                <circle cx="16" cy="16" r="6" fill="none" stroke="white" strokeWidth="1.5" opacity="0.3" />
-              </svg>
-              <span className="font-serif text-xl text-white">
-                LinkNest
-              </span>
+            <Link href="/" aria-label="LinkNest home">
+              <Image
+                src="/linknest-logo-white.svg"
+                alt="LinkNest"
+                width={122}
+                height={28}
+              />
             </Link>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/70">
               Made for creators who care.
