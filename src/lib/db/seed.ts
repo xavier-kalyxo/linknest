@@ -27,6 +27,27 @@ async function seed() {
     process.exit(1);
   }
 
+  // Refuse to seed anything that looks like production. This script publishes a
+  // page and claims the handle @testuser; running it against the live database
+  // would squat a real handle and expose seed content to the public.
+  if (process.env.NODE_ENV === "production") {
+    console.error("Refusing to seed: NODE_ENV is production.");
+    process.exit(1);
+  }
+  if (!process.argv.includes("--force")) {
+    const looksLocal =
+      /localhost|127\.0\.0\.1|-dev|dev-|staging|_test|neondb_test/i.test(
+        databaseUrl,
+      );
+    if (!looksLocal) {
+      console.error(
+        "DATABASE_URL does not look like a development database.\n" +
+          "Re-run with --force if you are certain this is not production.",
+      );
+      process.exit(1);
+    }
+  }
+
   const sql = neon(databaseUrl);
   const db = drizzle(sql);
 
@@ -36,7 +57,9 @@ async function seed() {
   const [user] = await db
     .insert(users)
     .values({
-      email: "test@linknest.com",
+      // .example is reserved by RFC 2606 and can never be registered, so this
+      // address cannot be claimed by anyone via the magic-link flow.
+      email: "test@example.com",
       name: "Test User",
       image: "https://api.dicebear.com/9.x/initials/svg?seed=TU",
     })

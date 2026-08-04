@@ -22,9 +22,11 @@ export const alt = "LinkNest page preview";
 export default async function Image({
   params,
 }: {
-  params: { username: string };
+  // Next 16 passes params as a Promise here, same as in page.tsx.
+  params: Promise<{ username: string }>;
 }) {
-  const slug = normalizeSlug(params.username);
+  const { username } = await params;
+  const slug = normalizeSlug(username);
 
   const [page] = await db
     .select({

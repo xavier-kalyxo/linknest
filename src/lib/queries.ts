@@ -1,6 +1,11 @@
 import { db } from "@/lib/db";
-import { workspaceMembers, workspaces, pages } from "@/lib/db/schema";
-import { eq, asc } from "drizzle-orm";
+import {
+  workspaceMembers,
+  workspaces,
+  pages,
+  entitlementOverrides,
+} from "@/lib/db/schema";
+import { eq, and, asc } from "drizzle-orm";
 import { normalizeSlug } from "@/lib/slugs";
 
 /**
@@ -18,14 +23,45 @@ export async function getUserWorkspace(userId: string) {
       slug: workspaces.slug,
       plan: workspaces.plan,
       stripeCustomerId: workspaces.stripeCustomerId,
+      planOverride: entitlementOverrides.value,
     })
     .from(workspaceMembers)
     .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
+    // Joined rather than queried separately: this runs on every dashboard
+    // request and inside every server action.
+    .leftJoin(
+      entitlementOverrides,
+      and(
+        eq(entitlementOverrides.workspaceId, workspaces.id),
+        eq(entitlementOverrides.feature, PLAN_OVERRIDE_FEATURE),
+      ),
+    )
     .where(eq(workspaceMembers.userId, userId))
     .orderBy(asc(workspaces.createdAt), asc(workspaces.id))
     .limit(1);
 
-  return result[0] ?? null;
+  const row = result[0];
+  if (!row) return null;
+
+  const { planOverride, ...workspace } = row;
+
+  // A comped plan (staff, beta tester, internal testing) grants entitlements
+  // without inventing a Stripe subscription. Every gate reads `plan`, so this
+  // one substitution covers all of them — and because the override lives in its
+  // own table, the Stripe reconciliation cron can still hold `workspaces.plan`
+  // honest without stripping access.
+  const override = resolvePlanOverride(planOverride);
+
+  return { ...workspace, plan: override ?? workspace.plan };
+}
+
+/** Feature key used by entitlement_overrides to comp an entire plan. */
+export const PLAN_OVERRIDE_FEATURE = "plan";
+
+function resolvePlanOverride(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const plan = (value as { plan?: unknown }).plan;
+  return plan === "pro" || plan === "free" ? plan : null;
 }
 
 /**

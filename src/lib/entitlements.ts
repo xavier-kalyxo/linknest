@@ -32,9 +32,12 @@ export type EntitlementValue =
   | (typeof PLAN_MATRIX)["pro"][Feature];
 
 /**
- * Get the entitlement value for a workspace + feature.
- * Checks DB overrides first, then falls back to the plan matrix.
- * For now, overrides are not implemented (returns plan matrix value).
+ * Get the entitlement value for a plan + feature.
+ *
+ * Plan-level overrides (comped accounts) are applied earlier, by
+ * getUserWorkspace() in src/lib/queries.ts — it substitutes the effective plan
+ * before it reaches any gate, so everything here operates on the resolved plan.
+ * Per-feature overrides are not implemented.
  */
 export function getEntitlement(plan: PlanId, feature: Feature): EntitlementValue {
   return PLAN_MATRIX[plan][feature];

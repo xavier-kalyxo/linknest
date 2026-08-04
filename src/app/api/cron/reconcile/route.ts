@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, isNull, lt, asc, inArray } from "drizzle-orm";
 import { checkUrls } from "@/lib/safe-browsing";
+import { stripe } from "@/lib/stripe";
 import { getLimit, type PlanId } from "@/lib/entitlements";
 import { revalidateTag } from "next/cache";
 import { publicPageTag } from "@/lib/cache-tags";
@@ -66,30 +67,70 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ ok: true, ...summary });
 }
 
-/** `subscriptions` is canonical; re-derive `workspaces.plan` from it. */
+/**
+ * Re-derive `workspaces.plan`.
+ *
+ * `subscriptions` is the canonical local record, but a row there can itself go
+ * stale — a subscription deleted in Stripe (or wiped with test data) leaves
+ * status='active' locally and keeps granting Pro forever. So each pro workspace
+ * is confirmed against Stripe, not just against the local row.
+ *
+ * Comped workspaces are unaffected: plan overrides live in entitlement_overrides
+ * and are applied at read time, so setting workspaces.plan='free' here does not
+ * revoke a comp.
+ */
 async function reconcilePlans(): Promise<number> {
   const proWorkspaces = await db
-    .select({ id: workspaces.id, status: subscriptions.status })
+    .select({
+      id: workspaces.id,
+      status: subscriptions.status,
+      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
+    })
     .from(workspaces)
     .leftJoin(subscriptions, eq(subscriptions.workspaceId, workspaces.id))
     .where(eq(workspaces.plan, "pro"));
 
-  const stale = proWorkspaces.filter(
-    (w) =>
-      !w.status || !["active", "trialing", "past_due"].includes(w.status),
-  );
+  const stale: string[] = [];
+
+  for (const workspace of proWorkspaces) {
+    const locallyEntitled =
+      workspace.status &&
+      ["active", "trialing", "past_due"].includes(workspace.status);
+
+    if (!locallyEntitled) {
+      stale.push(workspace.id);
+      continue;
+    }
+
+    // Local record says entitled — confirm Stripe agrees.
+    try {
+      const sub = await stripe.subscriptions.retrieve(
+        workspace.stripeSubscriptionId!,
+      );
+      if (!["active", "trialing", "past_due"].includes(sub.status)) {
+        stale.push(workspace.id);
+      }
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      // resource_missing == deleted in Stripe. Any other error (network, rate
+      // limit) must NOT downgrade a paying customer, so leave them alone.
+      if (code === "resource_missing") {
+        console.warn(
+          `[cron/reconcile] subscription ${workspace.stripeSubscriptionId} missing in Stripe`,
+        );
+        stale.push(workspace.id);
+      } else {
+        console.error("[cron/reconcile] Stripe lookup failed:", error);
+      }
+    }
+  }
 
   if (stale.length === 0) return 0;
 
   await db
     .update(workspaces)
     .set({ plan: "free", updatedAt: new Date() })
-    .where(
-      inArray(
-        workspaces.id,
-        stale.map((w) => w.id),
-      ),
-    );
+    .where(inArray(workspaces.id, stale));
 
   return stale.length;
 }
