@@ -12,12 +12,12 @@ export default function FAQ() {
     {
       question: "Is LinkNest really free?",
       answer:
-        "Yes! Our Free plan includes unlimited links, 6 gorgeous templates, basic analytics, and everything you need to get started. You can upgrade to Pro anytime for advanced features like extra templates, full color customization, and removing our badge.",
+        "Yes! Our Free plan includes up to 50 links and blocks, 6 gorgeous templates, basic analytics, and everything you need to get started. You can upgrade to Pro anytime for advanced features like extra templates, full color customization, and removing our badge.",
     },
     {
       question: "What can I put on my page?",
       answer:
-        "Links, headings, text blocks, images, and dividers. You can add unlimited links on any plan and arrange your content however you like with our visual editor.",
+        "Links, headings, text blocks, images, and dividers. Free pages hold up to 50 blocks and Pro pages up to 100, and you can arrange your content however you like with our visual editor.",
     },
     {
       question: "How much customization do I get?",

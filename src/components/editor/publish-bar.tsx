@@ -4,8 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages } from "@/lib/db/schema";
-import type { ThemeTokens } from "@/lib/templates/theme";
-import { publishPage, unpublishPage, updateTheme } from "@/lib/actions/page";
+import { publishPage, unpublishPage } from "@/lib/actions/page";
 import { getPublicPageUrl } from "@/lib/slugs";
 import { ShareModal } from "./share-modal";
 
@@ -13,11 +12,11 @@ type Page = InferSelectModel<typeof pages>;
 
 interface PublishBarProps {
   page: Page;
-  theme: ThemeTokens;
   onPageChange: (updates: Partial<Page>) => void;
+  onError: (message: string) => void;
 }
 
-export function PublishBar({ page, theme, onPageChange }: PublishBarProps) {
+export function PublishBar({ page, onPageChange, onError }: PublishBarProps) {
   const router = useRouter();
   const [isPublishing, setIsPublishing] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -26,16 +25,16 @@ export function PublishBar({ page, theme, onPageChange }: PublishBarProps) {
     const wasPublished = page.isPublished;
     setIsPublishing(true);
     try {
-      // Save current theme state before publishing
-      const themeResult = await updateTheme(page.id, theme);
-      if (themeResult.error) {
-        alert(themeResult.error);
-        return;
-      }
-
+      // NOTE: do not save the theme here. Theme edits are already persisted
+      // incrementally by the theme editor, and this save used to pass the fully
+      // *merged* theme (template defaults + user overrides) through the
+      // free-tier colour gate — which rejected the built-in palettes of 4 of the
+      // 6 free templates, making them impossible to publish. It also copied all
+      // ~30 template tokens into pages.theme as "user overrides", which then
+      // shadowed every future template switch.
       const result = await publishPage(page.id);
       if (result.error) {
-        alert(result.error);
+        onError(result.error);
         return;
       }
 
@@ -57,18 +56,22 @@ export function PublishBar({ page, theme, onPageChange }: PublishBarProps) {
 
       router.refresh();
     } catch (err) {
-      alert("Something went wrong. Please try again.");
+      onError("Something went wrong. Please try again.");
       console.error("Publish error:", err);
     } finally {
       setIsPublishing(false);
     }
-  }, [page.id, page.isPublished, theme, router, onPageChange]);
+  }, [page.id, page.isPublished, router, onPageChange, onError]);
 
   const handleUnpublish = useCallback(async () => {
-    await unpublishPage(page.id);
+    const result = await unpublishPage(page.id);
+    if (result.error) {
+      onError(result.error);
+      return;
+    }
     onPageChange({ isPublished: false });
     router.refresh();
-  }, [page.id, router, onPageChange]);
+  }, [page.id, router, onPageChange, onError]);
 
   return (
     <>

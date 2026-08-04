@@ -32,13 +32,19 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
   const [previewMode, setPreviewMode] = useState<"effective" | "base">(
     "effective",
   );
+  const [error, setError] = useState<string | null>(null);
 
   // Derive theme from pageState — single source of truth (no separate theme state)
   const template = useMemo(
     () => getTemplate(pageState.templateId),
     [pageState.templateId],
   );
-  const userOverrides = (pageState.theme ?? {}) as Partial<ThemeTokens>;
+  // Memoized: `pageState.theme ?? {}` creates a fresh object whenever theme is
+  // null, which made every dependent useMemo/useCallback recompute each render.
+  const userOverrides = useMemo(
+    () => (pageState.theme ?? {}) as Partial<ThemeTokens>,
+    [pageState.theme],
+  );
   const theme = useMemo(
     () => ({ ...template.defaultTheme, ...userOverrides }) as ThemeTokens,
     [template.defaultTheme, userOverrides],
@@ -52,15 +58,23 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
     [],
   );
 
+  // Server actions RETURN { error } rather than throwing, so a try/catch alone
+  // never rolls back — the optimistic update would stick while the write was
+  // rejected, showing a locked Pro feature as if it had applied.
   const handleThemeUpdate = useCallback(
     async (updates: Partial<ThemeTokens>) => {
       const prev = pageState;
       const newOverrides = { ...userOverrides, ...updates };
       setPageState((p) => ({ ...p, theme: newOverrides as Record<string, unknown> }));
       try {
-        await saveTheme(pageState.id, updates);
+        const result = await saveTheme(pageState.id, updates);
+        if (result?.error) {
+          setPageState(prev);
+          setError(result.error);
+        }
       } catch {
         setPageState(prev);
+        setError("Couldn't save your style change. Please try again.");
       }
     },
     [pageState, userOverrides],
@@ -71,9 +85,14 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
       const prev = pageState;
       setPageState((p) => ({ ...p, templateId }));
       try {
-        await updatePage({ pageId: pageState.id, templateId });
+        const result = await updatePage({ pageId: pageState.id, templateId });
+        if (result?.error) {
+          setPageState(prev);
+          setError(result.error);
+        }
       } catch {
         setPageState(prev);
+        setError("Couldn't switch template. Please try again.");
       }
     },
     [pageState],
@@ -83,9 +102,14 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
     const prev = pageState;
     setPageState((p) => ({ ...p, theme: {} as Record<string, unknown> }));
     try {
-      await resetTheme(pageState.id);
+      const result = await resetTheme(pageState.id);
+      if (result?.error) {
+        setPageState(prev);
+        setError(result.error);
+      }
     } catch {
       setPageState(prev);
+      setError("Couldn't reset your theme. Please try again.");
     }
   }, [pageState]);
 
@@ -106,8 +130,30 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
           </Link>
           <span className="text-sm font-medium">{pageState.title}</span>
         </div>
-        <PublishBar page={pageState} theme={theme} onPageChange={handlePageUpdate} />
+        <PublishBar
+          page={pageState}
+          onPageChange={handlePageUpdate}
+          onError={setError}
+        />
       </header>
+
+      {/* Error banner — the editor previously surfaced failures only via
+          alert(), or not at all, so rejected saves looked like successes. */}
+      {error && (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-4 border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          <span>{error}</span>
+          <button
+            onClick={() => setError(null)}
+            aria-label="Dismiss error"
+            className="shrink-0 font-medium text-red-600 hover:text-red-800"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Main editor area */}
       <div className="flex flex-1 overflow-hidden">
@@ -139,6 +185,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
                 onBlocksChange={handleBlocksUpdate}
                 plan={plan}
                 theme={theme}
+                onError={setError}
               />
             )}
             {activeTab === "style" && (
@@ -163,6 +210,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
                 theme={theme}
                 onPageChange={handlePageUpdate}
                 onThemeChange={handleThemeUpdate}
+                onError={setError}
               />
             )}
           </div>

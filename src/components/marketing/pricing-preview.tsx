@@ -7,30 +7,7 @@
 import { useState } from "react";
 import Link from "next/link";
 
-/* Duplicated from src/app/(dashboard)/pricing/pricing-cards.tsx
-   to avoid importing a "use client" module with Stripe dependencies. */
-const FREE_FEATURES = [
-  "1 page",
-  "Unlimited links",
-  "6 templates",
-  "5 curated color palettes",
-  "6 system fonts",
-  "3 button styles",
-  "7-day view count",
-  "50 MB storage",
-];
-
-const PRO_FEATURES = [
-  "Everything in Free",
-  "5 pages",
-  "All 8+ templates",
-  "Custom hex colors (any color)",
-  "30+ Google Fonts",
-  "6 button styles",
-  "90-day analytics",
-  "500 MB storage",
-  "Remove LinkNest badge",
-];
+import { FREE_FEATURES, PRO_FEATURES } from "@/lib/pricing";
 
 export default function PricingPreview() {
   const [annual, setAnnual] = useState(false);
@@ -127,7 +104,9 @@ export default function PricingPreview() {
               href="/signup"
               className="mt-8 block w-full rounded-[10px] bg-coral px-6 py-3 text-center text-[15px] font-bold tracking-[0.02em] text-white transition-all duration-200 hover:-translate-y-px hover:bg-coral-hover hover:shadow-[0_4px_16px_rgba(232,97,77,0.3)]"
             >
-              Start Free Trial
+              {/* Not "Start Free Trial": checkout creates no trial period, so
+                  this CTA led straight to an immediate charge. */}
+              Get Started
             </Link>
 
             <ul className="mt-8 space-y-3">

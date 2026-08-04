@@ -1,9 +1,11 @@
+import Link from "next/link";
 import type { InferSelectModel } from "drizzle-orm";
 import type { blocks as blocksSchema, pages } from "@/lib/db/schema";
 import type { LayoutType } from "@/lib/templates";
 import type { ThemeTokens, BlockStyleOverrides } from "@/lib/templates/theme";
 import { themeToCssVars, computeBlockResolvedStyle } from "@/lib/templates/theme";
 import { getTemplate } from "@/lib/templates";
+import { getGoogleFontsUrl } from "@/lib/templates/fonts";
 import { BlockRenderer } from "@/components/blocks/block-renderer";
 import { AvatarFallback } from "@/components/ui/avatar-fallback";
 
@@ -38,6 +40,11 @@ export function TemplateRenderer({
     backgroundStyle.backgroundImage = theme.backgroundGradient;
   }
 
+  // Load only the Google font families this page actually selected. Without
+  // this the family name was written into the CSS stack but no font file was
+  // ever requested, so every Pro font silently rendered as the fallback.
+  const googleFontsUrl = getGoogleFontsUrl([theme.fontHeading, theme.fontBody]);
+
   return (
     <div
       className="min-h-screen"
@@ -52,6 +59,9 @@ export function TemplateRenderer({
         ...(isPreview ? { pointerEvents: "none" as const } : {}),
       } as React.CSSProperties}
     >
+      {googleFontsUrl && (
+        <link rel="stylesheet" href={googleFontsUrl} precedence="default" />
+      )}
       <div
         className="mx-auto"
         style={{
@@ -71,13 +81,13 @@ export function TemplateRenderer({
         {/* Badge + Report */}
         <footer className="mt-16 flex flex-col items-center gap-2 text-center">
           {showBadge && (
-            <a
+            <Link
               href="/"
               className="text-xs transition-opacity hover:opacity-80"
               style={{ color: "var(--ln-color-text-muted)" }}
             >
               Made with LinkNest
-            </a>
+            </Link>
           )}
           {showReport && (
             <a

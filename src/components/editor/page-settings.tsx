@@ -1,13 +1,20 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
-import { updatePage, updateTheme as saveTheme } from "@/lib/actions/page";
+import { updatePage } from "@/lib/actions/page";
 import { AvatarFallback } from "@/components/ui/avatar-fallback";
 
 type Page = InferSelectModel<typeof pages>;
+
+// Matches the zod limits in src/lib/actions/page.ts — without these the input
+// silently accepts more than the server will store.
+const MAX_TITLE = 255;
+const MAX_BIO = 500;
+
+const SAVE_DEBOUNCE_MS = 600;
 
 interface PageSettingsProps {
   page: Page;
@@ -15,18 +22,68 @@ interface PageSettingsProps {
   theme: ThemeTokens;
   onPageChange: (updates: Partial<Page>) => void;
   onThemeChange: (updates: Partial<ThemeTokens>) => void;
+  onError: (message: string) => void;
 }
 
-export function PageSettings({ page, plan, theme, onPageChange, onThemeChange }: PageSettingsProps) {
+export function PageSettings({
+  page,
+  plan,
+  theme,
+  onPageChange,
+  onThemeChange,
+  onError,
+}: PageSettingsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+
+  // One timer per field. A single shared timer would let a later field's edit
+  // cancel an earlier field's pending write.
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Ignore the result of a request that a newer edit has already superseded, so
+  // a stale rejection cannot roll the UI back over newer input.
+  const seq = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      Object.values(pending).forEach(clearTimeout);
+    };
+  }, []);
 
   const handleSave = useCallback(
     (field: string, value: string) => {
       onPageChange({ [field]: value } as Partial<Page>);
-      updatePage({ pageId: page.id, [field]: value });
+
+      clearTimeout(timers.current[field]);
+      setSaveState("saving");
+
+      const ticket = (seq.current[field] ?? 0) + 1;
+      seq.current[field] = ticket;
+
+      // Debounced: this used to fire one server action per keystroke, which
+      // burned the 30/min mutation budget within a single sentence and then
+      // silently dropped every later character.
+      timers.current[field] = setTimeout(async () => {
+        try {
+          const result = await updatePage({ pageId: page.id, [field]: value });
+          if (seq.current[field] !== ticket) return; // superseded
+          if (result?.error) {
+            setSaveState("idle");
+            onError(result.error);
+            return;
+          }
+          setSaveState("saved");
+        } catch {
+          if (seq.current[field] !== ticket) return;
+          setSaveState("idle");
+          onError("Couldn't save your changes. Please try again.");
+        }
+      }, SAVE_DEBOUNCE_MS);
     },
-    [page.id, onPageChange],
+    [page.id, onPageChange, onError],
   );
 
   const handleAvatarUpload = useCallback(
@@ -43,26 +100,33 @@ export function PageSettings({ page, plan, theme, onPageChange, onThemeChange }:
         });
 
         if (!res.ok) {
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
           throw new Error(data.error || "Upload failed");
         }
 
         const { url } = await res.json();
         onPageChange({ avatarUrl: url } as Partial<Page>);
-        await updatePage({ pageId: page.id, avatarUrl: url });
+        const result = await updatePage({ pageId: page.id, avatarUrl: url });
+        if (result?.error) onError(result.error);
       } catch (error) {
         console.error("Avatar upload error:", error);
+        onError(
+          error instanceof Error
+            ? error.message
+            : "Couldn't upload that image. Please try again.",
+        );
       } finally {
         setUploading(false);
       }
     },
-    [page.id, onPageChange],
+    [page.id, onPageChange, onError],
   );
 
   const handleRemoveAvatar = useCallback(async () => {
     onPageChange({ avatarUrl: "" } as Partial<Page>);
-    await updatePage({ pageId: page.id, avatarUrl: "" });
-  }, [page.id, onPageChange]);
+    const result = await updatePage({ pageId: page.id, avatarUrl: "" });
+    if (result?.error) onError(result.error);
+  }, [page.id, onPageChange, onError]);
 
   return (
     <div className="space-y-6">
@@ -115,22 +179,46 @@ export function PageSettings({ page, plan, theme, onPageChange, onThemeChange }:
 
       {/* Page info */}
       <section>
-        <h3 className="mb-3 text-sm font-semibold">Page Info</h3>
+        <div className="mb-3 flex items-baseline justify-between">
+          <h3 className="text-sm font-semibold">Page Info</h3>
+          <span
+            aria-live="polite"
+            className="text-xs text-gray-400"
+          >
+            {saveState === "saving"
+              ? "Saving…"
+              : saveState === "saved"
+                ? "Saved"
+                : ""}
+          </span>
+        </div>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-gray-500">Title</label>
+            <label className="text-xs font-medium text-gray-500">
+              Title{" "}
+              <span className="text-gray-400">
+                ({page.title.length}/{MAX_TITLE})
+              </span>
+            </label>
             <input
               type="text"
               value={page.title}
               onChange={(e) => handleSave("title", e.target.value)}
+              maxLength={MAX_TITLE}
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-500">Bio</label>
+            <label className="text-xs font-medium text-gray-500">
+              Bio{" "}
+              <span className="text-gray-400">
+                ({(page.bio ?? "").length}/{MAX_BIO})
+              </span>
+            </label>
             <textarea
               value={page.bio ?? ""}
               onChange={(e) => handleSave("bio", e.target.value)}
+              maxLength={MAX_BIO}
               rows={3}
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400"
               placeholder="Tell visitors about yourself..."
@@ -210,10 +298,9 @@ export function PageSettings({ page, plan, theme, onPageChange, onThemeChange }:
             <input
               type="checkbox"
               checked={theme.hideBranding ?? false}
-              onChange={(e) => {
-                onThemeChange({ hideBranding: e.target.checked });
-                saveTheme(page.id, { hideBranding: e.target.checked });
-              }}
+              // onThemeChange already persists via the shell's handleThemeUpdate;
+              // calling saveTheme here too issued a second, redundant write.
+              onChange={(e) => onThemeChange({ hideBranding: e.target.checked })}
               className="h-4 w-4 rounded border-gray-300"
             />
           </label>

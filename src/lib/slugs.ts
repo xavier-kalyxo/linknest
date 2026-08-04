@@ -117,15 +117,28 @@ export type SlugValidationResult =
   | { valid: false; reason: string };
 
 /**
+ * Canonical form of a slug. This is what must be written to the database and
+ * used for lookups — `pages.slug` comparisons are case-sensitive, so storing
+ * unnormalized input makes the page unreachable at its own URL and lets a
+ * second account claim a case-variant of an existing handle.
+ */
+export function normalizeSlug(slug: string): string {
+  return slug.trim().toLowerCase();
+}
+
+/**
  * Validate a slug for format and reserved words.
  * Does NOT check database uniqueness — that's a separate query.
+ *
+ * Returns a result object, which is ALWAYS truthy — callers must branch on
+ * `.valid`, never on the return value itself.
  */
 export function validateSlug(slug: string): SlugValidationResult {
   if (!slug) {
     return { valid: false, reason: "Username is required." };
   }
 
-  const normalized = slug.toLowerCase().trim();
+  const normalized = normalizeSlug(slug);
 
   if (normalized.length < 3) {
     return { valid: false, reason: "Username must be at least 3 characters." };

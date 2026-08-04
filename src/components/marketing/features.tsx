@@ -15,7 +15,7 @@ export default function Features() {
         </svg>
       ),
       title: "Custom Colors & Fonts",
-      description: "Full brand customization with unlimited color palettes and 30+ Google Fonts. Your page, your identity.",
+      description: "Full brand customization with custom hex colors and 30+ Google Fonts. Your page, your identity.",
     },
     {
       icon: (

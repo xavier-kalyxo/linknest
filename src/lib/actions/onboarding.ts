@@ -5,8 +5,9 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { workspaces, workspaceMembers, pages } from "@/lib/db/schema";
-import { validateSlug } from "@/lib/slugs";
+import { validateSlug, normalizeSlug } from "@/lib/slugs";
 import { isSlugTaken } from "@/lib/queries";
+import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 
 const onboardingSchema = z.object({
   slug: z.string().min(3).max(63),
@@ -18,12 +19,24 @@ export type OnboardingState = {
 };
 
 export async function checkSlugAvailability(slug: string) {
+  // Requires a session and is rate limited: an open, unlimited endpoint here is
+  // an oracle for enumerating every handle on the platform.
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { available: false, reason: "You must be signed in." };
+  }
+
+  const rl = await checkRateLimit(mutationRateLimit, session.user.id);
+  if (!rl.success) {
+    return { available: false, reason: "Too many checks. Please slow down." };
+  }
+
   const validation = validateSlug(slug);
   if (!validation.valid) {
     return { available: false, reason: validation.reason };
   }
 
-  const taken = await isSlugTaken(slug);
+  const taken = await isSlugTaken(normalizeSlug(slug));
   if (taken) {
     return { available: false, reason: "This username is already taken." };
   }
@@ -49,7 +62,8 @@ export async function completeOnboarding(
     return { error: "Invalid input. Please check your username and page title." };
   }
 
-  const { slug, title } = parsed.data;
+  const { title } = parsed.data;
+  const slug = normalizeSlug(parsed.data.slug);
 
   // Validate slug format + reserved words
   const slugValidation = validateSlug(slug);
@@ -63,32 +77,39 @@ export async function completeOnboarding(
     return { error: "This username is already taken. Try another." };
   }
 
-  // Create workspace + page in a transaction-like flow
-  // (Neon HTTP driver doesn't support multi-statement transactions,
-  // so we do sequential inserts with cleanup on failure)
+  const userId = session.user.id;
+
+  // All three rows or none. A partial write here strands the user with a
+  // workspace but no page — the dashboard has no recovery path for that, so it
+  // permanently bricks the account and squats the slug via the unique index.
   try {
-    const [workspace] = await db
-      .insert(workspaces)
-      .values({
-        name: title,
+    await db.transaction(async (tx) => {
+      const [workspace] = await tx
+        .insert(workspaces)
+        .values({ name: title, slug })
+        .returning({ id: workspaces.id });
+
+      await tx.insert(workspaceMembers).values({
+        workspaceId: workspace.id,
+        userId,
+        role: "owner",
+      });
+
+      await tx.insert(pages).values({
+        workspaceId: workspace.id,
         slug,
-      })
-      .returning({ id: workspaces.id });
-
-    await db.insert(workspaceMembers).values({
-      workspaceId: workspace.id,
-      userId: session.user.id,
-      role: "owner",
+        title,
+        templateId: "clean-slate",
+        theme: {},
+      });
     });
-
-    await db.insert(pages).values({
-      workspaceId: workspace.id,
-      slug,
-      title,
-      templateId: "clean-slate",
-      theme: {},
-    });
-  } catch {
+  } catch (error) {
+    // Someone claimed the slug between the availability check and the insert.
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("duplicate key") || message.includes("unique")) {
+      return { error: "This username is already taken. Try another." };
+    }
+    console.error("[onboarding] Failed to create workspace:", error);
     return { error: "Something went wrong. Please try again." };
   }
 

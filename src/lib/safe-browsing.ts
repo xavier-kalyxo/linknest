@@ -92,27 +92,38 @@ export async function checkUrls(urls: string[]): Promise<SafeBrowsingResult> {
   }
 }
 
-// ─── Banned URL Patterns ────────────────────────────────────────────────────
+// ─── URL Scheme Allowlist ───────────────────────────────────────────────────
 
-const BANNED_PATTERNS = [
-  /^javascript:/i,
-  /^data:/i,
-  /^vbscript:/i,
-  /<meta[^>]+http-equiv\s*=\s*["']?refresh/i,
-];
+const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
+
+export type UrlValidationResult = { url: string } | { error: string };
 
 /**
- * Check if a URL matches any banned pattern.
- * Returns the reason if banned, null if OK.
+ * Parse, validate and normalize a user-supplied URL.
+ *
+ * Returns the WHATWG-normalized href so that what we store is exactly what a
+ * browser will resolve. A denylist cannot be used here: the URL parser strips
+ * ASCII tab/LF/CR and leading whitespace before resolving the scheme, so
+ * "java\tscript:alert(1)" resolves to javascript: while matching no anchored
+ * pattern. Only an allowlist applied to the *parsed* protocol is sound.
  */
-export function checkBannedUrl(url: string): string | null {
-  if (!url) return null;
-
-  for (const pattern of BANNED_PATTERNS) {
-    if (pattern.test(url)) {
-      return "This URL type is not allowed for security reasons.";
-    }
+export function normalizeUrl(raw: string): UrlValidationResult {
+  if (!raw || !raw.trim()) {
+    return { error: "Enter a URL." };
   }
 
-  return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.trim());
+  } catch {
+    return { error: "Enter a full URL, including https://" };
+  }
+
+  if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) {
+    return {
+      error: "Only http, https, mailto and tel links are allowed.",
+    };
+  }
+
+  return { url: parsed.href };
 }

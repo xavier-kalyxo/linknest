@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { subscriptions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { stripe } from "@/lib/stripe";
+import { absoluteUrl } from "@/lib/site";
 import Link from "next/link";
 
 export default async function BillingPage({
@@ -31,19 +32,32 @@ export default async function BillingPage({
 
   // Build Stripe Customer Portal URL if they have a customer ID
   let portalUrl: string | null = null;
+  let portalUnavailable = false;
   if (workspace.stripeCustomerId) {
     try {
       const portalSession = await stripe.billingPortal.sessions.create({
         customer: workspace.stripeCustomerId,
-        return_url: `${process.env.AUTH_URL}/dashboard/billing`,
+        // absoluteUrl, not a bare process.env.AUTH_URL — unset, that produced
+        // the literal return URL "undefined/dashboard/billing".
+        return_url: absoluteUrl("/dashboard/billing"),
       });
       portalUrl = portalSession.url;
-    } catch {
-      // Portal not configured yet in Stripe — that's fine
+    } catch (error) {
+      // The portal is the ONLY cancel path in the app, so a failure here has
+      // to be visible rather than silently hiding the button.
+      console.error("[billing] Stripe portal session failed:", error);
+      portalUnavailable = true;
     }
   }
 
-  const isActive = sub?.status === "active" || sub?.status === "trialing";
+  const isActive =
+    sub?.status === "active" ||
+    sub?.status === "trialing" ||
+    sub?.status === "past_due";
+
+  // The webhook may not have landed yet when Stripe redirects back, so the
+  // success banner must not claim Pro is live while the badge still says Free.
+  const upgradePending = showSuccess && workspace.plan !== "pro";
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -63,12 +77,21 @@ export default async function BillingPage({
 
       <main className="mx-auto max-w-3xl px-6 py-8">
         {/* Success / Cancel banners */}
-        {showSuccess && (
-          <div className="mb-6 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-            Your subscription is active! You now have access to all Pro
-            features.
-          </div>
-        )}
+        {showSuccess &&
+          (upgradePending ? (
+            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+              Payment received — we&apos;re activating your Pro features now.
+              This usually takes a few seconds.{" "}
+              <Link href="/dashboard/billing" className="font-medium underline">
+                Refresh
+              </Link>
+            </div>
+          ) : (
+            <div className="mb-6 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+              Your subscription is active! You now have access to all Pro
+              features.
+            </div>
+          ))}
         {showCanceled && (
           <div className="mb-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
             Checkout was canceled. No charges were made.
@@ -125,6 +148,26 @@ export default async function BillingPage({
               </a>
             )}
           </div>
+
+          {sub?.status === "past_due" && (
+            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Your last payment failed. Update your card to keep Pro — we&apos;ll
+              keep retrying in the meantime.
+            </p>
+          )}
+
+          {portalUnavailable && (
+            <p className="mt-4 text-sm text-gray-500">
+              Subscription management is temporarily unavailable. Email{" "}
+              <a
+                href="mailto:support@linknest.click"
+                className="underline hover:text-gray-700"
+              >
+                support@linknest.click
+              </a>{" "}
+              and we&apos;ll take care of it.
+            </p>
+          )}
         </div>
       </main>
     </div>

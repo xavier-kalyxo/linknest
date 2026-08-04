@@ -5,15 +5,20 @@ import { useState, useRef, useCallback } from "react";
 interface ImageUploadProps {
   currentUrl?: string | null;
   onUpload: (url: string) => void;
+  onError?: (message: string) => void;
   label?: string;
   className?: string;
+  /** Avatars are round; block images keep their aspect ratio. */
+  shape?: "circle" | "rect";
 }
 
 export function ImageUpload({
   currentUrl,
   onUpload,
+  onError,
   label = "Upload Image",
   className = "",
+  shape = "circle",
 }: ImageUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -38,23 +43,25 @@ export function ImageUpload({
           body: formData,
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          alert(data.error || "Upload failed");
           setPreview(null);
+          onError?.(data.error || "Upload failed. Please try again.");
           return;
         }
 
         // Return the public URL
         onUpload(data.url);
       } catch {
-        alert("Upload failed. Please try again.");
         setPreview(null);
+        onError?.("Upload failed. Please try again.");
       } finally {
         setIsUploading(false);
+        // Allow re-selecting the same file after a failure.
+        if (inputRef.current) inputRef.current.value = "";
       }
     },
-    [onUpload],
+    [onUpload, onError],
   );
 
   const displayUrl = preview || currentUrl;
@@ -62,19 +69,31 @@ export function ImageUpload({
   return (
     <div className={className}>
       {displayUrl && (
-        <div className="mb-2 h-20 w-20 overflow-hidden rounded-full border border-gray-200">
+        <div
+          className={
+            shape === "circle"
+              ? "mb-2 h-20 w-20 overflow-hidden rounded-full border border-gray-200"
+              : "mb-2 max-h-40 w-full overflow-hidden rounded-lg border border-gray-200"
+          }
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={displayUrl}
             alt="Preview"
-            className="h-full w-full object-cover"
+            className={
+              shape === "circle"
+                ? "h-full w-full object-cover"
+                : "h-auto w-full object-contain"
+            }
           />
         </div>
       )}
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml"
+        // No SVG: the upload route rejects it anyway (SVG can carry <script>),
+        // so offering it in the picker only produces a confusing failure.
+        accept="image/jpeg,image/png,image/webp,image/gif"
         onChange={handleFileSelect}
         className="hidden"
       />

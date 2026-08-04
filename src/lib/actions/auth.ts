@@ -62,27 +62,44 @@ export async function registerWithPassword(
     return { error: "Too many attempts. Please try again later." };
   }
 
-  // Check if user already exists
   const [existingUser] = await db
-    .select({ id: users.id })
+    .select({ id: users.id, emailVerified: users.emailVerified })
     .from(users)
     .where(eq(users.email, normalizedEmail))
     .limit(1);
 
-  if (existingUser) {
-    return { error: "An account with this email already exists. Try signing in instead." };
-  }
-
-  // Hash password (cost factor 12)
+  // Hash password (cost factor 12). Computed before branching so that the
+  // response time does not reveal whether the address is already registered.
   const hashedPassword = await bcrypt.hash(password, 12);
 
-  // Create user (emailVerified is null — must verify before login)
-  await db.insert(users).values({
-    name,
-    email: normalizedEmail,
-    password: hashedPassword,
-    emailVerified: null,
-  });
+  if (existingUser?.emailVerified) {
+    // Deliberately the same generic response as the success path: returning
+    // "this email already exists" here turns signup into an account oracle.
+    return {
+      success:
+        "Check your email to finish setting up your account. If you already have one, sign in instead.",
+    };
+  }
+
+  if (existingUser) {
+    // The row exists but was never verified, so nobody has proven ownership of
+    // this mailbox yet. Let the latest attempt replace the pending credentials
+    // — otherwise whoever submitted the form first permanently locks the real
+    // owner out of password signup. generateVerificationToken() invalidates the
+    // earlier token, so only this attempt can be completed.
+    await db
+      .update(users)
+      .set({ name, password: hashedPassword })
+      .where(eq(users.id, existingUser.id));
+  } else {
+    // Create user (emailVerified is null — must verify before login)
+    await db.insert(users).values({
+      name,
+      email: normalizedEmail,
+      password: hashedPassword,
+      emailVerified: null,
+    });
+  }
 
   // Generate and send verification email
   const emailRl = await checkRateLimit(emailRateLimit, `email:${normalizedEmail}`);
@@ -90,8 +107,19 @@ export async function registerWithPassword(
     return { success: "Check your email to verify your account." };
   }
 
-  const token = await generateVerificationToken(normalizedEmail);
-  await sendVerificationEmail({ to: normalizedEmail, token: token.token });
+  try {
+    const token = await generateVerificationToken(normalizedEmail);
+    await sendVerificationEmail({ to: normalizedEmail, token: token.token });
+  } catch (error) {
+    // The user row is already committed. Without this catch the action throws,
+    // the account exists but is unverifiable, and re-registering is the only
+    // recovery — so surface a retryable error instead of crashing.
+    console.error("[register] Failed to send verification email:", error);
+    return {
+      error:
+        "We couldn't send your verification email. Please try again in a moment.",
+    };
+  }
 
   return { success: "Check your email to verify your account." };
 }

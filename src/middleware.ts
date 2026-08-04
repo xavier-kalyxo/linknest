@@ -71,7 +71,11 @@ export default auth((req) => {
     pathname !== "/" &&
     !pathname.startsWith("/@") &&
     // Only single-segment paths (no nested paths like /foo/bar)
-    !pathname.slice(1).includes("/")
+    !pathname.slice(1).includes("/") &&
+    // Never redirect static files served from public/. Slugs cannot contain a
+    // dot, so anything with one is an asset — without this, every request for
+    // /linknest-logo.svg paid a 301 round-trip to /@linknest-logo.svg.
+    !pathname.slice(1).includes(".")
   ) {
     const url = new URL(`/@${pathname.slice(1)}`, req.url);
     return NextResponse.redirect(url, 301);

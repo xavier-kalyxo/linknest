@@ -27,9 +27,7 @@ interface ThemeEditorProps {
 }
 
 export function ThemeEditor({
-  pageId,
   theme,
-  themeBase,
   userOverrides,
   plan,
   templateId,

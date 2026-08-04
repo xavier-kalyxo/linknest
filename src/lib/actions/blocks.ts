@@ -1,13 +1,14 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { blocks, pages } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getUserWorkspace } from "@/lib/queries";
-import { checkBannedUrl } from "@/lib/safe-browsing";
+import { publicPageTag } from "@/lib/cache-tags";
+import { normalizeUrl } from "@/lib/safe-browsing";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import { getLimit, type PlanId } from "@/lib/entitlements";
 import { type BlockStyleOverrides } from "@/lib/templates/theme";
@@ -17,19 +18,47 @@ import { validateStyleOverrides } from "./block-validation";
 
 const blockTypeSchema = z.enum(["link", "header", "text", "divider", "image"]);
 
+// `content` is rendered directly by the block components, so its shape must be
+// closed. A bare z.record(z.unknown()) let a non-string land in a JSX text slot
+// ("Objects are not valid as a React child"), which throws during SSR and takes
+// down the whole public page. styleOverrides is shape- and plan-checked
+// separately by validateStyleOverrides().
+const blockStyleOverridesSchema = z
+  .object({
+    variant: z.string().max(32).optional(),
+    bgColor: z.string().max(32).optional(),
+    textColor: z.string().max(32).optional(),
+    borderRadius: z.number().optional(),
+    shadow: z.string().max(16).optional(),
+    buttonStyle: z.string().max(32).optional(),
+  })
+  .strict();
+
+const blockContentSchema = z
+  .object({
+    text: z.string().max(5000).optional(),
+    imageUrl: z.string().max(2048).optional(),
+    alt: z.string().max(255).optional(),
+    styleOverrides: blockStyleOverridesSchema.optional(),
+  })
+  .strict();
+
+// `url` is deliberately NOT z.url(): zod accepts any scheme new URL() parses,
+// including javascript:. normalizeUrl() applies the scheme allowlist and
+// returns the value we persist.
 const createBlockSchema = z.object({
   pageId: z.string().uuid(),
   type: blockTypeSchema,
   label: z.string().max(255).optional(),
-  url: z.string().url().max(2048).optional(),
-  content: z.record(z.string(), z.unknown()).optional(),
+  url: z.string().max(2048).optional(),
+  content: blockContentSchema.optional(),
 });
 
 const updateBlockSchema = z.object({
   id: z.string().uuid(),
   label: z.string().max(255).optional(),
-  url: z.string().url().max(2048).optional().or(z.literal("")),
-  content: z.record(z.string(), z.unknown()).optional(),
+  url: z.string().max(2048).optional(),
+  content: blockContentSchema.optional(),
   isVisible: z.boolean().optional(),
 });
 
@@ -52,6 +81,23 @@ async function verifyPageOwnership(pageId: string, userId: string) {
 
   if (!page) return null;
   return { page, workspace };
+}
+
+/** Normalize any URLs carried inside a block's content payload. */
+function normalizeContent(
+  content: z.infer<typeof blockContentSchema> | undefined,
+): { content: Record<string, unknown> } | { error: string } {
+  if (!content) return { content: {} };
+
+  const normalized: Record<string, unknown> = { ...content };
+
+  if (content.imageUrl) {
+    const result = normalizeUrl(content.imageUrl);
+    if ("error" in result) return { error: "Invalid image URL." };
+    normalized.imageUrl = result.url;
+  }
+
+  return { content: normalized };
 }
 
 // ─── Create Block ───────────────────────────────────────────────────────────
@@ -77,11 +123,16 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
 
   const { page, workspace } = result;
 
-  // Check for banned URL patterns
+  // Validate + normalize the URL against the scheme allowlist
+  let normalizedUrl: string | null = null;
   if (parsed.data.url) {
-    const banned = checkBannedUrl(parsed.data.url);
-    if (banned) return { error: banned };
+    const urlResult = normalizeUrl(parsed.data.url);
+    if ("error" in urlResult) return { error: urlResult.error };
+    normalizedUrl = urlResult.url;
   }
+
+  const contentResult = normalizeContent(parsed.data.content);
+  if ("error" in contentResult) return { error: contentResult.error };
 
   // Gate: Block count limit
   const [blockCount] = await db
@@ -106,12 +157,13 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
       type: parsed.data.type,
       position: (maxPos?.max ?? -1) + 1,
       label: parsed.data.label ?? null,
-      url: parsed.data.url ?? null,
-      content: parsed.data.content ?? {},
+      url: normalizedUrl,
+      content: contentResult.content,
     })
     .returning();
 
   revalidatePath(`/${page.slug}`);
+  updateTag(publicPageTag(page.slug));
 
   return { block };
 }
@@ -150,15 +202,22 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
 
   const { workspace, page } = result;
 
-  // Check for banned URL patterns
+  // Validate + normalize the URL against the scheme allowlist
+  let normalizedUrl: string | null = null;
   if (parsed.data.url) {
-    const banned = checkBannedUrl(parsed.data.url);
-    if (banned) return { error: banned };
+    const urlResult = normalizeUrl(parsed.data.url);
+    if ("error" in urlResult) return { error: urlResult.error };
+    normalizedUrl = urlResult.url;
   }
+
+  const contentResult = normalizeContent(parsed.data.content);
+  if ("error" in contentResult) return { error: contentResult.error };
 
   // Validate style overrides (only when content.styleOverrides is being written)
   if (parsed.data.content) {
-    const overrides = (parsed.data.content as Record<string, unknown>).styleOverrides as BlockStyleOverrides | undefined;
+    const overrides = parsed.data.content.styleOverrides as
+      | BlockStyleOverrides
+      | undefined;
     if (overrides && Object.keys(overrides).length > 0) {
       const err = validateStyleOverrides(overrides, workspace.plan as PlanId);
       if (err) return { error: err };
@@ -167,9 +226,9 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.label !== undefined) updates.label = parsed.data.label;
-  if (parsed.data.url !== undefined)
-    updates.url = parsed.data.url || null;
-  if (parsed.data.content !== undefined) updates.content = parsed.data.content;
+  if (parsed.data.url !== undefined) updates.url = normalizedUrl;
+  if (parsed.data.content !== undefined)
+    updates.content = contentResult.content;
   if (parsed.data.isVisible !== undefined)
     updates.isVisible = parsed.data.isVisible;
 
@@ -180,6 +239,7 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
     .returning();
 
   revalidatePath(`/${page.slug}`);
+  updateTag(publicPageTag(page.slug));
 
   return { block: updated };
 }
@@ -191,6 +251,9 @@ export async function deleteBlock(blockId: string) {
   if (!session?.user?.id) {
     return { error: "Unauthorized" };
   }
+
+  const rl = await checkRateLimit(mutationRateLimit, session.user.id);
+  if (!rl.success) return { error: "Too many requests. Please slow down." };
 
   const [block] = await db
     .select({ pageId: blocks.pageId })
@@ -210,6 +273,7 @@ export async function deleteBlock(blockId: string) {
   await db.delete(blocks).where(eq(blocks.id, blockId));
 
   revalidatePath(`/${result.page.slug}`);
+  updateTag(publicPageTag(result.page.slug));
 
   return { success: true };
 }
@@ -224,6 +288,9 @@ export async function reorderBlocks(
     return { error: "Unauthorized" };
   }
 
+  const rl = await checkRateLimit(mutationRateLimit, session.user.id);
+  if (!rl.success) return { error: "Too many requests. Please slow down." };
+
   const parsed = reorderBlocksSchema.safeParse(input);
   if (!parsed.success) {
     return { error: "Invalid input" };
@@ -235,18 +302,40 @@ export async function reorderBlocks(
   }
 
   const { page } = result;
+  const { blockIds } = parsed.data;
 
-  // Update positions in order
-  const updates = parsed.data.blockIds.map((id, index) =>
-    db
-      .update(blocks)
-      .set({ position: index, updatedAt: new Date() })
-      .where(and(eq(blocks.id, id), eq(blocks.pageId, page.id))),
-  );
+  // The incoming list must be an exact permutation of the page's blocks.
+  // Without this, a duplicated id would collapse two blocks onto one position
+  // and a short list would leave stale positions behind, making ORDER BY
+  // position non-deterministic.
+  const owned = await db
+    .select({ id: blocks.id })
+    .from(blocks)
+    .where(eq(blocks.pageId, page.id));
 
-  await Promise.all(updates);
+  const ownedIds = new Set(owned.map((b) => b.id));
+  const uniqueIncoming = new Set(blockIds);
+
+  if (
+    uniqueIncoming.size !== blockIds.length ||
+    blockIds.length !== ownedIds.size ||
+    blockIds.some((id) => !ownedIds.has(id))
+  ) {
+    return { error: "Block order is out of date. Refresh and try again." };
+  }
+
+  // One transaction: a partial failure must not leave duplicate positions.
+  await db.transaction(async (tx) => {
+    for (const [index, id] of blockIds.entries()) {
+      await tx
+        .update(blocks)
+        .set({ position: index, updatedAt: new Date() })
+        .where(and(eq(blocks.id, id), eq(blocks.pageId, page.id)));
+    }
+  });
 
   revalidatePath(`/${page.slug}`);
+  updateTag(publicPageTag(page.slug));
 
   return { success: true };
 }

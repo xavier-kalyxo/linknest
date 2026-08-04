@@ -2,17 +2,51 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { pageReports, pages } from "@/lib/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
+import { getClientIp } from "@/lib/request-ip";
 
 const VALID_REASONS = ["phishing", "malware", "spam", "other"] as const;
 
 export async function POST(request: NextRequest) {
-  const { pageId, reason, details } = (await request.json()) as {
+  // Require a JSON content type. request.json() parses any body, which made
+  // this a CORS "simple request": a third-party page could silently file
+  // reports from every visitor's own IP, defeating the per-IP limit and
+  // manufacturing a takedown signal against a competitor.
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return NextResponse.json(
+      { error: "Unsupported content type" },
+      { status: 415 },
+    );
+  }
+
+  const origin = request.headers.get("origin");
+  if (origin) {
+    const host = request.headers.get("host");
+    let sameOrigin = false;
+    try {
+      sameOrigin = new URL(origin).host === host;
+    } catch {
+      sameOrigin = false;
+    }
+    if (!sameOrigin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
+  let body: { pageId?: unknown; reason?: unknown; details?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+
+  const { pageId, reason, details } = body as {
     pageId: string;
     reason: string;
     details?: string;
   };
 
-  if (!pageId || !reason) {
+  if (typeof pageId !== "string" || typeof reason !== "string") {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
@@ -31,11 +65,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Page not found" }, { status: 404 });
   }
 
-  // Get reporter IP
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
+  const ip = await getClientIp();
 
   // Rate limit: max 3 reports per IP per day
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);

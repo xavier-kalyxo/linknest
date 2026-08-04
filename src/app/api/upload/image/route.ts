@@ -4,6 +4,11 @@ import { getUserWorkspace } from "@/lib/queries";
 import { r2Client, R2_BUCKET_NAME, getR2PublicUrl } from "@/lib/r2";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { processImage } from "@/lib/image-processing";
+import { db } from "@/lib/db";
+import { assets } from "@/lib/db/schema";
+import { eq, sql } from "drizzle-orm";
+import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
+import { getLimit, type PlanId } from "@/lib/entitlements";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -23,10 +28,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const rl = await checkRateLimit(mutationRateLimit, session.user.id);
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many uploads. Please slow down." },
+        { status: 429 },
+      );
+    }
+
     // Get workspace
     const workspace = await getUserWorkspace(session.user.id);
     if (!workspace) {
       return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+    }
+
+    // Enforce the plan's storage quota. This route previously recorded nothing
+    // in `assets`, so the quota was computed over an always-empty table and
+    // every plan effectively had unlimited R2 storage.
+    const [usage] = await db
+      .select({ total: sql<number>`COALESCE(SUM(${assets.sizeBytes}), 0)` })
+      .from(assets)
+      .where(eq(assets.workspaceId, workspace.id));
+
+    const usedBytes = Number(usage?.total ?? 0);
+    const quota = getLimit(workspace.plan as PlanId, "max_asset_bytes");
+    if (usedBytes >= quota) {
+      return NextResponse.json(
+        {
+          error: `Storage limit reached (${Math.round(quota / 1_000_000)}MB). Upgrade to Pro for more space.`,
+        },
+        { status: 403 },
+      );
     }
 
     // Parse FormData
@@ -84,6 +116,17 @@ export async function POST(request: NextRequest) {
 
     // Return public URL
     const url = getR2PublicUrl(key);
+
+    // Record the asset so the quota above can actually see it, and so orphaned
+    // objects are attributable for cleanup.
+    await db.insert(assets).values({
+      workspaceId: workspace.id,
+      filename: file.name.slice(0, 255),
+      r2Key: key,
+      url,
+      mimeType: "image/webp",
+      sizeBytes: processed.length,
+    });
 
     return NextResponse.json({ url });
   } catch (error) {

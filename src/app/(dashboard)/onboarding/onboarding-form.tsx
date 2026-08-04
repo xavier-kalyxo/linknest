@@ -38,12 +38,14 @@ export function OnboardingForm() {
   }, []);
 
   useEffect(() => {
-    if (slug.length < 3) {
-      setSlugStatus({ checking: false });
-      return;
-    }
-
+    // Reset inside the timeout rather than synchronously in the effect body:
+    // a synchronous setState here triggers a cascading render on every
+    // keystroke that shortens the slug below the minimum length.
     const timer = setTimeout(() => {
+      if (slug.length < 3) {
+        setSlugStatus({ checking: false });
+        return;
+      }
       checkAvailability(slug);
     }, 400);
 

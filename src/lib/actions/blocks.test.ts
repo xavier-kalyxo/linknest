@@ -11,7 +11,7 @@ describe("validateStyleOverrides", () => {
 
   it("rejects invalid variant", () => {
     expect(
-      validateStyleOverrides({ variant: "bogus" as any }, "free"),
+      validateStyleOverrides({ variant: "bogus" as never }, "free"),
     ).toBe("Invalid variant");
   });
 
@@ -71,7 +71,7 @@ describe("validateStyleOverrides", () => {
 
   it("rejects invalid shadow value", () => {
     expect(
-      validateStyleOverrides({ shadow: "lg" as any }, "pro"),
+      validateStyleOverrides({ shadow: "lg" as never }, "pro"),
     ).toBe("Invalid shadow value");
   });
 
@@ -83,7 +83,7 @@ describe("validateStyleOverrides", () => {
 
   it("rejects invalid buttonStyle", () => {
     expect(
-      validateStyleOverrides({ buttonStyle: "rainbow" as any }, "pro"),
+      validateStyleOverrides({ buttonStyle: "rainbow" as never }, "pro"),
     ).toBe("Invalid button style");
   });
 

@@ -33,6 +33,42 @@ const adapter = {
       .limit(1);
     return user ?? null;
   },
+  /**
+   * Account-takeover guard.
+   *
+   * registerWithPassword creates a users row for ANY email with no proof of
+   * ownership (emailVerified = null). If the real owner of that mailbox later
+   * signs in with a magic link or OAuth, @auth/core activates that same row by
+   * setting emailVerified — which silently arms the password a stranger chose,
+   * because the Credentials provider's only gate is emailVerified.
+   *
+   * So: whenever a sign-in activates a previously unverified account, discard
+   * any password on it. A password that was already verified survives, since
+   * such a row has emailVerified set and never enters this branch.
+   */
+  async updateUser(data: { id: string; emailVerified?: Date | null }) {
+    if (data.emailVerified) {
+      const [current] = await db
+        .select({
+          emailVerified: users.emailVerified,
+          password: users.password,
+        })
+        .from(users)
+        .where(eq(users.id, data.id))
+        .limit(1);
+
+      if (current && !current.emailVerified && current.password) {
+        await db
+          .update(users)
+          .set({ password: null })
+          .where(eq(users.id, data.id));
+      }
+    }
+
+    return baseAdapter.updateUser!(data as Parameters<
+      NonNullable<typeof baseAdapter.updateUser>
+    >[0]);
+  },
   async createVerificationToken(data: {
     identifier: string;
     token: string;

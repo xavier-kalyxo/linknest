@@ -16,6 +16,7 @@ export function NewPageButton({
   const [showDialog, setShowDialog] = useState(false);
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   if (!canCreate) {
     return (
@@ -34,6 +35,7 @@ export function NewPageButton({
   const handleCreate = async () => {
     if (!title.trim() || !slug.trim()) return;
     setLoading(true);
+    setError(null);
 
     try {
       const res = await fetch("/api/pages", {
@@ -42,10 +44,23 @@ export function NewPageButton({
         body: JSON.stringify({ title: title.trim(), slug: slug.trim(), workspaceId }),
       });
       const data = await res.json();
-      if (data.page?.id) {
+
+      if (res.ok && data.page?.id) {
         router.push(`/dashboard/editor/${data.page.id}`);
+        return;
       }
+
+      // Previously this branch did nothing at all and never cleared `loading`,
+      // so any failure — including the "Page limit reached, upgrade to Pro"
+      // upsell — left the button stuck on "Creating…" with no explanation.
+      setError(
+        typeof data.error === "string"
+          ? data.error
+          : "Couldn't create that page. Please try again.",
+      );
+      setLoading(false);
     } catch {
+      setError("Couldn't reach the server. Check your connection.");
       setLoading(false);
     }
   };
@@ -86,10 +101,13 @@ export function NewPageButton({
                     type="text"
                     value={slug}
                     onChange={(e) =>
+                      // No underscore: SLUG_REGEX in src/lib/slugs.ts allows
+                      // only [a-z0-9-], so permitting "_" here produced input
+                      // the server was guaranteed to reject.
                       setSlug(
                         e.target.value
                           .toLowerCase()
-                          .replace(/[^a-z0-9_-]/g, ""),
+                          .replace(/[^a-z0-9-]/g, ""),
                       )
                     }
                     placeholder="yourname"
@@ -98,6 +116,13 @@ export function NewPageButton({
                 </div>
               </div>
             </div>
+
+            {error && (
+              <p role="alert" className="mt-4 text-sm text-red-600">
+                {error}
+              </p>
+            )}
+
             <div className="mt-6 flex justify-end gap-3">
               <button
                 onClick={() => setShowDialog(false)}

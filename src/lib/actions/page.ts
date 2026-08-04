@@ -1,12 +1,13 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { pages, blocks, pendingUrlScans } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getUserWorkspace } from "@/lib/queries";
+import { publicPageTag } from "@/lib/cache-tags";
 import { checkUrls } from "@/lib/safe-browsing";
 import { checkRateLimit, mutationRateLimit } from "@/lib/rate-limit";
 import type { ThemeTokens } from "@/lib/templates/theme";
@@ -19,6 +20,85 @@ import { getTemplate } from "@/lib/templates";
 import { hasFeature, type PlanId } from "@/lib/entitlements";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
+
+// Theme tokens are interpolated into CSS custom properties and rendered into a
+// style attribute on the public page. React does not sanitize custom-property
+// values, so an unvalidated value containing ";" injects sibling declarations —
+// which is enough to hide the "Made with LinkNest" badge (a paid feature) or
+// restyle the page arbitrarily. Every field is therefore closed and bounded,
+// and unknown keys are rejected outright.
+const CSS_COLOR_RE =
+  /^(#[0-9a-fA-F]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%]+\)|transparent)$/;
+
+const colorToken = z.string().max(64).regex(CSS_COLOR_RE, "Invalid color");
+// Font stacks are user-selectable but must not carry punctuation that could
+// terminate a declaration.
+const fontToken = z
+  .string()
+  .max(120)
+  .regex(/^[\w\s,'"-]+$/, "Invalid font");
+
+const themeTokensSchema = z
+  .object({
+    version: z.literal(1).optional(),
+
+    colorBackground: colorToken.optional(),
+    colorSurface: colorToken.optional(),
+    colorPrimary: colorToken.optional(),
+    colorSecondary: colorToken.optional(),
+    colorText: colorToken.optional(),
+    colorTextMuted: colorToken.optional(),
+    colorAccent: colorToken.optional(),
+    borderColor: colorToken.optional(),
+
+    fontHeading: fontToken.optional(),
+    fontBody: fontToken.optional(),
+    fontSizeBase: z.number().int().min(10).max(32).optional(),
+    fontWeightHeading: z.number().int().min(100).max(900).optional(),
+    lineHeightBody: z.number().min(1).max(3).optional(),
+
+    spacingUnit: z.number().int().min(2).max(32).optional(),
+    contentMaxWidth: z.number().int().min(280).max(1200).optional(),
+    blockGap: z.number().int().min(0).max(64).optional(),
+    pagePaddingX: z.number().int().min(0).max(128).optional(),
+    pagePaddingY: z.number().int().min(0).max(256).optional(),
+
+    // 999 is the "fully rounded / pill" idiom used by several templates.
+    borderRadius: z.number().int().min(0).max(999).optional(),
+    borderWidth: z.number().int().min(0).max(16).optional(),
+
+    buttonStyle: z
+      .enum([
+        "filled",
+        "outline",
+        "ghost",
+        "pill",
+        "shadow",
+        "neon",
+        "glass",
+        "minimal",
+      ])
+      .optional(),
+    buttonRadius: z.number().int().min(0).max(999).optional(),
+    buttonPaddingX: z.number().int().min(0).max(64).optional(),
+    buttonPaddingY: z.number().int().min(0).max(64).optional(),
+
+    shadow: z.enum(["none", "sm", "md", "lg"]).optional(),
+    backgroundEffect: z.enum(["none", "gradient", "pattern", "blur"]).optional(),
+    // Restricted to gradient functions: this value lands in `background-image`,
+    // where a url() would let a page owner beacon every visitor to a third party.
+    backgroundGradient: z
+      .string()
+      .max(512)
+      .regex(
+        /^(linear|radial|conic)-gradient\([^;{}()]*(\([^;{}()]*\)[^;{}()]*)*\)$/,
+        "Invalid gradient",
+      )
+      .optional(),
+
+    hideBranding: z.boolean().optional(),
+  })
+  .strict();
 
 const updatePageSchema = z.object({
   pageId: z.string().uuid(),
@@ -102,6 +182,7 @@ export async function updatePage(input: z.infer<typeof updatePageSchema>) {
     .returning();
 
   revalidatePath(`/${page.slug}`);
+  updateTag(publicPageTag(page.slug));
 
   return { page: updated };
 }
@@ -114,6 +195,18 @@ export async function updateTheme(pageId: string, theme: Partial<ThemeTokens>) {
     return { error: "Unauthorized" };
   }
 
+  const rl = await checkRateLimit(mutationRateLimit, session.user.id);
+  if (!rl.success) return { error: "Too many requests. Please slow down." };
+
+  if (typeof pageId !== "string" || !z.string().uuid().safeParse(pageId).success) {
+    return { error: "Invalid input" };
+  }
+
+  const parsedTheme = themeTokensSchema.safeParse(theme);
+  if (!parsedTheme.success) {
+    return { error: "Invalid theme value" };
+  }
+
   const result = await verifyPageOwnership(pageId, session.user.id);
   if (!result) {
     return { error: "Page not found" };
@@ -121,6 +214,7 @@ export async function updateTheme(pageId: string, theme: Partial<ThemeTokens>) {
 
   const { page, workspace } = result;
   const plan = workspace.plan as PlanId;
+  theme = parsedTheme.data as Partial<ThemeTokens>;
 
   // Gate 1: Custom hex colors
   if (!hasFeature(plan, "custom_colors")) {
@@ -180,6 +274,7 @@ export async function updateTheme(pageId: string, theme: Partial<ThemeTokens>) {
     .returning();
 
   revalidatePath(`/${page.slug}`);
+  updateTag(publicPageTag(page.slug));
 
   return { page: updated };
 }
@@ -206,6 +301,7 @@ export async function resetTheme(pageId: string) {
     .returning();
 
   revalidatePath(`/${page.slug}`);
+  updateTag(publicPageTag(page.slug));
 
   return { page: updated };
 }
@@ -266,6 +362,7 @@ export async function publishPage(pageId: string) {
 
   // Revalidate the public page cache (use internal path without @)
   revalidatePath(`/${page.slug}`);
+  updateTag(publicPageTag(page.slug));
 
   return { page: updated };
 }
@@ -296,6 +393,7 @@ export async function unpublishPage(pageId: string) {
 
   // Revalidate the public page cache
   revalidatePath(`/${page.slug}`);
+  updateTag(publicPageTag(page.slug));
 
   return { page: updated };
 }

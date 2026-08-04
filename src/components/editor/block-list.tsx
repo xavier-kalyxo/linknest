@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { InferSelectModel } from "drizzle-orm";
 import type { blocks as blocksSchema } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
@@ -8,7 +8,7 @@ import {
   VALID_VARIANTS,
   ALL_BUTTON_STYLES,
   type BlockStyleOverrides,
-  type BlockVariant,
+
 } from "@/lib/templates/theme";
 import {
   DndContext,
@@ -33,6 +33,7 @@ import {
   deleteBlock,
   reorderBlocks,
 } from "@/lib/actions/blocks";
+import { ImageUpload } from "./image-upload";
 
 type Block = InferSelectModel<typeof blocksSchema>;
 
@@ -42,9 +43,17 @@ interface BlockListProps {
   onBlocksChange: (blocks: Block[]) => void;
   plan: "free" | "pro";
   theme: ThemeTokens;
+  onError: (message: string) => void;
 }
 
-export function BlockList({ pageId, blocks, onBlocksChange, plan, theme }: BlockListProps) {
+export function BlockList({
+  pageId,
+  blocks,
+  onBlocksChange,
+  plan,
+  theme,
+  onError,
+}: BlockListProps) {
   const [isAdding, setIsAdding] = useState(false);
   const sorted = [...blocks].sort((a, b) => a.position - b.position);
 
@@ -67,45 +76,57 @@ export function BlockList({ pageId, blocks, onBlocksChange, plan, theme }: Block
         position: i,
       }));
 
-      // Optimistic update
+      // Optimistic update, rolled back if the server rejects the new order.
+      const previous = blocks;
       onBlocksChange(reordered);
 
-      // Persist
-      await reorderBlocks({
+      const result = await reorderBlocks({
         pageId,
         blockIds: reordered.map((b) => b.id),
       });
+      if (result?.error) {
+        onBlocksChange(previous);
+        onError(result.error);
+      }
     },
-    [sorted, pageId, onBlocksChange],
+    [sorted, blocks, pageId, onBlocksChange, onError],
   );
 
   const handleAddBlock = useCallback(
     async (type: "link" | "header" | "text" | "divider" | "image") => {
       setIsAdding(true);
-      const result = await createBlock({
-        pageId,
-        type,
-        label:
-          type === "link"
-            ? "New Link"
-            : type === "header"
-              ? "Heading"
-              : type === "text"
-                ? "Text block"
-                : undefined,
-      });
+      try {
+        const result = await createBlock({
+          pageId,
+          type,
+          label:
+            type === "link"
+              ? "New Link"
+              : type === "header"
+                ? "Heading"
+                : type === "text"
+                  ? "Text block"
+                  : undefined,
+        });
 
-      if (result.block) {
-        onBlocksChange([...blocks, result.block]);
+        if (result.block) {
+          onBlocksChange([...blocks, result.block]);
+        } else if (result.error) {
+          // Previously discarded — which is why the free-tier block-limit
+          // upsell was unreachable and the button just stopped working at 50.
+          onError(result.error);
+        }
+      } finally {
+        setIsAdding(false);
       }
-      setIsAdding(false);
     },
-    [pageId, blocks, onBlocksChange],
+    [pageId, blocks, onBlocksChange, onError],
   );
 
   const handleUpdateBlock = useCallback(
     async (blockId: string, updates: Partial<Block>) => {
       // Optimistic
+      const previous = blocks;
       onBlocksChange(
         blocks.map((b) => (b.id === blockId ? { ...b, ...updates } : b)),
       );
@@ -117,17 +138,38 @@ export function BlockList({ pageId, blocks, onBlocksChange, plan, theme }: Block
       if (updates.isVisible !== undefined) clean.isVisible = updates.isVisible;
       if (updates.content !== undefined) clean.content = updates.content;
 
-      await updateBlock(clean as Parameters<typeof updateBlock>[0]);
+      const result = await updateBlock(
+        clean as Parameters<typeof updateBlock>[0],
+      );
+      if (result?.error) {
+        onBlocksChange(previous);
+        onError(result.error);
+      }
     },
-    [blocks, onBlocksChange],
+    [blocks, onBlocksChange, onError],
   );
 
   const handleDeleteBlock = useCallback(
     async (blockId: string) => {
+      const target = blocks.find((b) => b.id === blockId);
+      const label = target?.label?.trim();
+      const confirmed = window.confirm(
+        label
+          ? `Delete "${label}"? This can't be undone.`
+          : "Delete this block? This can't be undone.",
+      );
+      if (!confirmed) return;
+
+      const previous = blocks;
       onBlocksChange(blocks.filter((b) => b.id !== blockId));
-      await deleteBlock(blockId);
+
+      const result = await deleteBlock(blockId);
+      if (result?.error) {
+        onBlocksChange(previous);
+        onError(result.error);
+      }
     },
-    [blocks, onBlocksChange],
+    [blocks, onBlocksChange, onError],
   );
 
   const handleMoveBlock = useCallback(
@@ -142,15 +184,19 @@ export function BlockList({ pageId, blocks, onBlocksChange, plan, theme }: Block
       }));
 
       // Optimistic update
+      const previous = blocks;
       onBlocksChange(reordered);
 
-      // Persist
-      await reorderBlocks({
+      const result = await reorderBlocks({
         pageId,
         blockIds: reordered.map((b) => b.id),
       });
+      if (result?.error) {
+        onBlocksChange(previous);
+        onError(result.error);
+      }
     },
-    [sorted, pageId, onBlocksChange],
+    [sorted, blocks, pageId, onBlocksChange, onError],
   );
 
   return (
@@ -175,6 +221,7 @@ export function BlockList({ pageId, blocks, onBlocksChange, plan, theme }: Block
               onUpdate={handleUpdateBlock}
               onDelete={handleDeleteBlock}
               onMove={handleMoveBlock}
+              onError={onError}
             />
           ))}
         </SortableContext>
@@ -227,6 +274,7 @@ function SortableBlockItem({
   onUpdate,
   onDelete,
   onMove,
+  onError,
 }: {
   block: Block;
   isFirst: boolean;
@@ -236,6 +284,7 @@ function SortableBlockItem({
   onUpdate: (id: string, updates: Partial<Block>) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, direction: "up" | "down") => void;
+  onError: (message: string) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition } =
@@ -248,6 +297,7 @@ function SortableBlockItem({
 
   const content = (block.content ?? {}) as Record<string, unknown>;
   const overrides = (content.styleOverrides ?? {}) as BlockStyleOverrides;
+  const imageUrl = (content.imageUrl as string | undefined) ?? block.url ?? null;
 
   const handleStyleChange = useCallback(
     (updates: Partial<BlockStyleOverrides>) => {
@@ -371,6 +421,59 @@ function SortableBlockItem({
               />
             </div>
           )}
+          {/* Image blocks had no way to set an image at all: the type could be
+              added from the picker but rendered nothing, and ImageUpload was
+              imported by no one. */}
+          {block.type === "image" && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-gray-500">Image</label>
+              <ImageUpload
+                currentUrl={imageUrl}
+                shape="rect"
+                label={imageUrl ? "Replace image" : "Upload image"}
+                onError={onError}
+                onUpload={(url) =>
+                  onUpdate(block.id, {
+                    content: { ...content, imageUrl: url },
+                  } as Partial<Block>)
+                }
+              />
+              <div>
+                <label className="text-xs font-medium text-gray-500">
+                  Alt text
+                </label>
+                <input
+                  type="text"
+                  value={(content.alt as string) ?? ""}
+                  onChange={(e) =>
+                    onUpdate(block.id, {
+                      content: { ...content, alt: e.target.value },
+                    } as Partial<Block>)
+                  }
+                  placeholder="Describe the image for screen readers"
+                  maxLength={255}
+                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
+                />
+              </div>
+            </div>
+          )}
+          {block.type === "text" && (
+            <div>
+              <label className="text-xs font-medium text-gray-500">Text</label>
+              <textarea
+                value={(content.text as string) ?? block.label ?? ""}
+                onChange={(e) =>
+                  onUpdate(block.id, {
+                    content: { ...content, text: e.target.value },
+                  } as Partial<Block>)
+                }
+                rows={3}
+                maxLength={5000}
+                placeholder="Write a paragraph…"
+                className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-gray-400"
+              />
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-gray-500">Visible</label>
             <input
@@ -415,12 +518,24 @@ function BlockStyleEditor({
   onReset: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const colorDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // One timer per colour field. A single shared timer meant that picking a text
+  // colour within 500ms of a background colour cancelled the pending background
+  // write, silently discarding it.
+  const colorDebounceRefs = useRef<
+    Partial<Record<"bgColor" | "textColor", ReturnType<typeof setTimeout>>>
+  >({});
+
+  useEffect(() => {
+    const pending = colorDebounceRefs.current;
+    return () => {
+      Object.values(pending).forEach(clearTimeout);
+    };
+  }, []);
 
   const handleColorChange = useCallback(
     (key: "bgColor" | "textColor", value: string) => {
-      clearTimeout(colorDebounceRef.current);
-      colorDebounceRef.current = setTimeout(() => {
+      clearTimeout(colorDebounceRefs.current[key]);
+      colorDebounceRefs.current[key] = setTimeout(() => {
         onChange({ [key]: value });
       }, 500);
     },

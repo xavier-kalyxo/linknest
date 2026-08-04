@@ -2,29 +2,7 @@
 
 import { useState } from "react";
 
-const FREE_FEATURES = [
-  "1 page",
-  "Unlimited links",
-  "6 templates",
-  "5 curated color palettes",
-  "6 system fonts",
-  "3 button styles",
-  "7-day view count",
-  "50MB storage",
-];
-
-const PRO_FEATURES = [
-  "5 pages",
-  "Unlimited links",
-  "All 8+ templates",
-  "Custom hex colors (any color)",
-  "30+ Google Fonts",
-  "6 button styles + animations",
-  "90-day analytics + clicks + referrers",
-  "500MB storage",
-  "Remove LinkNest badge",
-  "Priority support",
-];
+import { FREE_FEATURES, PRO_FEATURES } from "@/lib/pricing";
 
 export function PricingCards({
   currentPlan,

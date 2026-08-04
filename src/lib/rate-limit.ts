@@ -13,8 +13,9 @@ const redis =
     : null;
 
 /**
- * Auth rate limiter: 5 requests per minute per IP.
- * Protects login/signup from brute force.
+ * Auth rate limiter: 5 requests per minute per identifier.
+ * Callers key this by email (Server Actions) or client IP (the NextAuth
+ * endpoints), so check the call site before assuming the scope.
  */
 export const authRateLimit = redis
   ? new Ratelimit({
@@ -48,9 +49,23 @@ export const mutationRateLimit = redis
     })
   : null;
 
+// Missing rate-limit config used to silently disable every limiter with no
+// signal at all — one absent env var removed a security control invisibly.
+if (!redis && process.env.NODE_ENV === "production") {
+  console.error(
+    "[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN are not set. " +
+      "Rate limiting is DISABLED: auth brute-force, mail-bombing and mutation " +
+      "flooding are all unthrottled.",
+  );
+}
+
 /**
  * Check rate limit. Returns { success: true } if allowed, or { success: false } if blocked.
- * When Redis is not configured (local dev), always allows.
+ *
+ * When Redis is not configured (local dev), always allows. Transient Redis
+ * errors also allow: an Upstash incident should not take down sign-in and the
+ * editor, which is what an unguarded `await limiter.limit()` did — it threw
+ * straight out of every calling Server Action.
  */
 export async function checkRateLimit(
   limiter: Ratelimit | null,
@@ -60,6 +75,11 @@ export async function checkRateLimit(
     return { success: true };
   }
 
-  const result = await limiter.limit(identifier);
-  return { success: result.success, remaining: result.remaining };
+  try {
+    const result = await limiter.limit(identifier);
+    return { success: result.success, remaining: result.remaining };
+  } catch (error) {
+    console.error("[rate-limit] Limiter unavailable, allowing request:", error);
+    return { success: true };
+  }
 }

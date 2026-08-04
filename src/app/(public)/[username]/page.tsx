@@ -1,58 +1,99 @@
 import { notFound } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { pages, blocks, workspaces } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { TemplateRenderer } from "@/components/templates/template-renderer";
 import type { ThemeTokens } from "@/lib/templates/theme";
+import { getPublicPageUrl, normalizeSlug } from "@/lib/slugs";
+import { publicPageTag } from "@/lib/cache-tags";
+import { SITE_URL } from "@/lib/site";
 
 interface Props {
   params: Promise<{ username: string }>;
 }
 
-export const revalidate = false;
-
+// NOTE: `export const revalidate = false` used to sit here. It was a no-op —
+// a dynamic segment with no generateStaticParams is server-rendered on demand
+// (confirmed by `next build`: this route reports as ƒ, and prerender-manifest
+// lists no dynamic route for it), so the page was never in the full-route
+// cache and revalidatePath() could not affect it. The result was two database
+// queries on every single public page view.
+//
+// Caching is therefore done at the data layer, which works regardless of how
+// the route itself is rendered, and is invalidated by tag on publish/edit.
 async function getPageData(slug: string) {
-  const result = await db
-    .select({
-      page: pages,
-      plan: workspaces.plan,
-    })
-    .from(pages)
-    .innerJoin(workspaces, eq(pages.workspaceId, workspaces.id))
-    .where(eq(pages.slug, slug))
-    .limit(1);
+  const normalized = normalizeSlug(slug);
 
-  return result[0] ?? null;
+  return unstable_cache(
+    async () => {
+      const result = await db
+        .select({
+          page: pages,
+          plan: workspaces.plan,
+        })
+        .from(pages)
+        .innerJoin(workspaces, eq(pages.workspaceId, workspaces.id))
+        // Slugs are stored normalized; lowercasing here means a shared link
+        // with different capitalisation still resolves instead of 404ing.
+        .where(eq(pages.slug, normalized))
+        .limit(1);
+
+      return result[0] ?? null;
+    },
+    ["public-page", normalized],
+    { tags: [publicPageTag(normalized)], revalidate: 300 },
+  )();
 }
 
-async function getPageBlocks(pageId: string) {
-  return db
-    .select()
-    .from(blocks)
-    .where(eq(blocks.pageId, pageId))
-    .orderBy(asc(blocks.position));
+async function getPageBlocks(pageId: string, slug: string) {
+  const normalized = normalizeSlug(slug);
+
+  return unstable_cache(
+    async () =>
+      db
+        .select()
+        .from(blocks)
+        .where(eq(blocks.pageId, pageId))
+        .orderBy(asc(blocks.position)),
+    ["public-page-blocks", pageId],
+    { tags: [publicPageTag(normalized)], revalidate: 300 },
+  )();
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params;
   const result = await getPageData(username);
 
-  if (!result) {
-    return { title: "Not Found" };
+  // Also gate on isPublished: metadata used to be generated for draft pages,
+  // exposing an unpublished title/bio on a route that 404s.
+  if (!result || !result.page.isPublished) {
+    return { title: "Not Found", robots: { index: false, follow: false } };
   }
 
   const { page } = result;
+  const title = page.seoTitle || page.title;
+  const description =
+    page.seoDescription || page.bio || `${page.title} — LinkNest`;
+  const canonical = getPublicPageUrl(page.slug);
 
   return {
-    title: page.seoTitle || page.title,
-    description:
-      page.seoDescription || page.bio || `${page.title} — LinkNest`,
+    metadataBase: new URL(SITE_URL),
+    title,
+    description,
+    alternates: { canonical },
     openGraph: {
-      title: page.seoTitle || page.title,
-      description:
-        page.seoDescription || page.bio || `${page.title} — LinkNest`,
+      title,
+      description,
       type: "profile",
+      url: canonical,
+      siteName: "LinkNest",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
     },
   };
 }
@@ -66,7 +107,7 @@ export default async function PublicPage({ params }: Props) {
   }
 
   const { page, plan } = result;
-  const pageBlocks = await getPageBlocks(page.id);
+  const pageBlocks = await getPageBlocks(page.id, page.slug);
 
   const theme = page.theme as Partial<ThemeTokens> | null;
   const isPro = plan === "pro";
