@@ -11,6 +11,11 @@ interface LinkBlockProps {
 export function LinkBlock({ block, resolvedStyle }: LinkBlockProps) {
   if (!block.url) return null;
 
+  // tel: and mailto: hand off to another app. Opening them in a new tab leaves
+  // the visitor staring at a blank page behind the dialer or mail client — on
+  // desktop it is simply a dead tab. Only http(s) destinations get _blank.
+  const isExternalPage = /^https?:/i.test(block.url);
+
   const baseStyle: React.CSSProperties = {
     fontFamily: "var(--ln-font-body)",
     fontSize: "var(--ln-font-size-base)",
@@ -36,8 +41,9 @@ export function LinkBlock({ block, resolvedStyle }: LinkBlockProps) {
   return (
     <a
       href={block.url}
-      target="_blank"
-      rel="noopener noreferrer me"
+      {...(isExternalPage
+        ? { target: "_blank", rel: "noopener noreferrer me" }
+        : {})}
       data-link-id={block.id}
       className="block w-full text-center transition-transform hover:scale-[1.02] focus-visible:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[box-shadow:0_0_0_4px_var(--ln-color-bg)]"
       style={resolvedStyle ? { ...baseStyle, ...resolvedStyle } : baseStyle}

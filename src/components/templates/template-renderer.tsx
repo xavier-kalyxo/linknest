@@ -60,7 +60,20 @@ export function TemplateRenderer({
       } as React.CSSProperties}
     >
       {googleFontsUrl && (
-        <link rel="stylesheet" href={googleFontsUrl} precedence="default" />
+        <>
+          {/* The stylesheet is render-blocking and cross-origin, so the browser
+              otherwise pays DNS + TCP + TLS to two new hosts before it can even
+              start parsing it. Preconnecting overlaps that with HTML parsing —
+              worth ~100-300ms on mobile. gstatic is where the woff2 lives and
+              needs crossOrigin to match the font's CORS fetch. */}
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link
+            rel="preconnect"
+            href="https://fonts.gstatic.com"
+            crossOrigin=""
+          />
+          <link rel="stylesheet" href={googleFontsUrl} precedence="default" />
+        </>
       )}
       <div
         className="mx-auto"
