@@ -1,6 +1,8 @@
+import { SITE_URL } from "@/lib/site";
+
 const EMAILIT_API_KEY = process.env.EMAILIT_API_KEY!;
 const FROM = process.env.EMAIL_FROM || "LinkNest <noreply@linknest.click>";
-const APP_URL = process.env.AUTH_URL || "http://localhost:3000";
+const APP_URL = SITE_URL;
 
 async function sendEmail({
   to,
@@ -17,7 +19,25 @@ async function sendEmail({
       Authorization: `Bearer ${EMAILIT_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ from: FROM, to, subject, html }),
+    body: JSON.stringify({
+      from: FROM,
+      to,
+      subject,
+      html,
+      // Every email this app sends is an authentication email, and click
+      // tracking BREAKS them. Emailit rewrites each href to
+      // https://go.linknest.click/<id>, so the real sign-in URL — token and all
+      // — only exists behind a redirect. That means:
+      //   * inbox scanners and link previewers that pre-fetch the tracked URL
+      //     burn the single-use token before the recipient ever clicks;
+      //   * the query string carrying `token` and `email` survives only if the
+      //     tracker reproduces it exactly;
+      //   * the visible link is an opaque domain, which is precisely the shape
+      //     users are taught to distrust in a sign-in email.
+      // Open tracking is disabled too: there is no product reason to log when
+      // someone reads their own login email.
+      tracking: { loads: false, clicks: false },
+    }),
   });
 
   if (!res.ok) {
