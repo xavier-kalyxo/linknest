@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages } from "@/lib/db/schema";
+import * as Sentry from "@sentry/nextjs";
 import { publishPage, unpublishPage } from "@/lib/actions/page";
 import { getPublicPageUrl } from "@/lib/slugs";
 import { ShareModal } from "./share-modal";
@@ -68,8 +69,19 @@ export function PublishBar({ page, onPageChange, onError }: PublishBarProps) {
 
       router.refresh();
     } catch (err) {
-      onError("Something went wrong. Please try again.");
+      // Surface something actionable and report it. This used to swallow the
+      // real cause behind "Something went wrong", leaving nothing to debug
+      // from — the server had no record at all that a publish had failed.
       console.error("Publish error:", err);
+      Sentry.captureException(err, {
+        tags: { action: "publishPage" },
+        extra: { pageId: page.id, slug: page.slug },
+      });
+      onError(
+        err instanceof Error && err.message
+          ? `Couldn't publish: ${err.message}`
+          : "Couldn't publish. Please try again — if it keeps happening, let us know.",
+      );
     } finally {
       setIsPublishing(false);
     }

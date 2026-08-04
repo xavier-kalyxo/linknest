@@ -80,7 +80,11 @@ async function getPageBlocks(pageId: string, slug: string) {
       db
         .select()
         .from(blocks)
-        .where(eq(blocks.pageId, pageId))
+        // Filter hidden blocks in SQL, not at render time. BlockRenderer
+        // returning null keeps them out of the DOM, but they still travelled to
+        // the browser inside the RSC payload — so a block the owner hid was
+        // readable in View Source, label, URL and all.
+        .where(and(eq(blocks.pageId, pageId), eq(blocks.isVisible, true)))
         .orderBy(asc(blocks.position)),
     ["public-page-blocks", pageId],
     { tags: [publicPageTag(normalized)], revalidate: 300 },

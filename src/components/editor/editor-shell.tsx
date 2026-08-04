@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import type { InferSelectModel } from "drizzle-orm";
 import type { pages, blocks as blocksSchema } from "@/lib/db/schema";
 import type { ThemeTokens } from "@/lib/templates/theme";
@@ -33,6 +33,15 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
     "effective",
   );
   const [error, setError] = useState<string | null>(null);
+
+  // The banner had no lifetime: an error from one action stayed pinned while
+  // the user moved on to unrelated work, so a stale message looked like a fresh
+  // failure of whatever they were doing at the time.
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 8000);
+    return () => clearTimeout(timer);
+  }, [error]);
 
   // Derive theme from pageState — single source of truth (no separate theme state)
   const template = useMemo(

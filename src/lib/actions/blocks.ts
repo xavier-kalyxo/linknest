@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath, updateTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { blocks, pages } from "@/lib/db/schema";
@@ -163,7 +163,7 @@ export async function createBlock(input: z.infer<typeof createBlockSchema>) {
     .returning();
 
   revalidatePath(`/${page.slug}`);
-  updateTag(publicPageTag(page.slug));
+  revalidateTag(publicPageTag(page.slug), "max");
 
   return { block };
 }
@@ -239,7 +239,7 @@ export async function updateBlock(input: z.infer<typeof updateBlockSchema>) {
     .returning();
 
   revalidatePath(`/${page.slug}`);
-  updateTag(publicPageTag(page.slug));
+  revalidateTag(publicPageTag(page.slug), "max");
 
   return { block: updated };
 }
@@ -273,7 +273,7 @@ export async function deleteBlock(blockId: string) {
   await db.delete(blocks).where(eq(blocks.id, blockId));
 
   revalidatePath(`/${result.page.slug}`);
-  updateTag(publicPageTag(result.page.slug));
+  revalidateTag(publicPageTag(result.page.slug), "max");
 
   return { success: true };
 }
@@ -335,7 +335,7 @@ export async function reorderBlocks(
   });
 
   revalidatePath(`/${page.slug}`);
-  updateTag(publicPageTag(page.slug));
+  revalidateTag(publicPageTag(page.slug), "max");
 
   return { success: true };
 }

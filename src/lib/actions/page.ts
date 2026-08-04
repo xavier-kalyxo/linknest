@@ -1,7 +1,8 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath, updateTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { pages, blocks, pendingUrlScans } from "@/lib/db/schema";
@@ -182,7 +183,7 @@ export async function updatePage(input: z.infer<typeof updatePageSchema>) {
     .returning();
 
   revalidatePath(`/${page.slug}`);
-  updateTag(publicPageTag(page.slug));
+  revalidateTag(publicPageTag(page.slug), "max");
 
   return { page: updated };
 }
@@ -274,7 +275,7 @@ export async function updateTheme(pageId: string, theme: Partial<ThemeTokens>) {
     .returning();
 
   revalidatePath(`/${page.slug}`);
-  updateTag(publicPageTag(page.slug));
+  revalidateTag(publicPageTag(page.slug), "max");
 
   return { page: updated };
 }
@@ -301,7 +302,7 @@ export async function resetTheme(pageId: string) {
     .returning();
 
   revalidatePath(`/${page.slug}`);
-  updateTag(publicPageTag(page.slug));
+  revalidateTag(publicPageTag(page.slug), "max");
 
   return { page: updated };
 }
@@ -350,21 +351,35 @@ export async function publishPage(pageId: string) {
     }
   }
 
-  const [updated] = await db
-    .update(pages)
-    .set({
-      isPublished: true,
-      publishedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(pages.id, pageId))
-    .returning();
+  try {
+    const [updated] = await db
+      .update(pages)
+      .set({
+        isPublished: true,
+        publishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(pages.id, pageId))
+      .returning();
 
-  // Revalidate the public page cache (use internal path without @)
-  revalidatePath(`/${page.slug}`);
-  updateTag(publicPageTag(page.slug));
+    // Revalidate the public page cache (use internal path without @)
+    revalidatePath(`/${page.slug}`);
+    revalidateTag(publicPageTag(page.slug), "max");
 
-  return { page: updated };
+    return { page: updated };
+  } catch (error) {
+    // Publishing is the single most important action in the product, and an
+    // exception here previously reached the user as a bare "Something went
+    // wrong" with no server-side record of what failed.
+    console.error("[publishPage] Failed:", { pageId, slug: page.slug }, error);
+    Sentry.captureException(error, {
+      tags: { action: "publishPage" },
+      extra: { pageId, slug: page.slug },
+    });
+    return {
+      error: "Couldn't publish your page. Please try again in a moment.",
+    };
+  }
 }
 
 // ─── Unpublish Page ─────────────────────────────────────────────────────────
@@ -393,7 +408,7 @@ export async function unpublishPage(pageId: string) {
 
   // Revalidate the public page cache
   revalidatePath(`/${page.slug}`);
-  updateTag(publicPageTag(page.slug));
+  revalidateTag(publicPageTag(page.slug), "max");
 
   return { page: updated };
 }
