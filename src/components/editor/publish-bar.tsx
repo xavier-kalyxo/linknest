@@ -43,13 +43,25 @@ export function PublishBar({ page, onPageChange, onError }: PublishBarProps) {
 
       // Confetti on first publish
       if (!wasPublished) {
-        import("canvas-confetti").then((confetti) => {
-          confetti.default({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
+        // Respect prefers-reduced-motion. The matchMedia guard also avoids
+        // downloading the chunk at all; disableForReducedMotion alone would
+        // still fetch it. The share modal is the actual payload here, so it
+        // must open regardless of the motion preference.
+        const prefersReducedMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
+
+        if (!prefersReducedMotion) {
+          import("canvas-confetti").then((confetti) => {
+            confetti.default({
+              particleCount: 100,
+              spread: 70,
+              origin: { y: 0.6 },
+              disableForReducedMotion: true,
+            });
           });
-        });
+        }
+
         // Auto-open share modal on first publish
         setShowShare(true);
       }

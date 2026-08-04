@@ -44,8 +44,14 @@ export async function GET(request: NextRequest) {
   const projectId = process.env.POSTHOG_PROJECT_ID;
   const host = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 
-  // If PostHog is not configured, return placeholder data
+  // If PostHog is not configured, return placeholder data. This is an operator
+  // misconfiguration, not something the account owner can fix, so log it loudly
+  // — otherwise every customer silently sees an empty dashboard.
   if (!apiKey || !projectId) {
+    console.error(
+      "[analytics] POSTHOG_PERSONAL_API_KEY / POSTHOG_PROJECT_ID are not set — " +
+        "analytics is returning empty data for every user.",
+    );
     return NextResponse.json({
       total: 0,
       clicks: 0,
@@ -61,57 +67,74 @@ export async function GET(request: NextRequest) {
   // another slug — so short-handle owners saw inflated counts and long-handle
   // owners had their traffic double-counted into someone else's dashboard.
   const canonicalUrl = `${SITE_URL}/@${slug}`;
-  const urlFilter = {
-    key: "$current_url",
-    value: [canonicalUrl, `${canonicalUrl}/`],
-    operator: "exact",
-    type: "event",
-  };
+  const urls = [canonicalUrl, `${canonicalUrl}/`];
 
-  async function queryTrend(eventId: string) {
-    const res = await fetch(
-      `${host}/api/projects/${projectId}/insights/trend/`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          events: [{ id: eventId, type: "events", properties: [urlFilter] }],
-          date_from: `-${days}d`,
-          interval: "day",
-        }),
+  // HogQL via /query/. The previous implementation posted to
+  // /api/projects/:id/insights/trend/, which PostHog has retired — it answers
+  // 403 "Legacy insight endpoints are not available for this user", so the
+  // dashboard could never have shown a number regardless of the API key.
+  const HOGQL = `
+    SELECT toDate(timestamp) AS day, count() AS c
+    FROM events
+    WHERE event = {event}
+      AND properties.$current_url IN {urls}
+      AND timestamp >= now() - INTERVAL {days} DAY
+    GROUP BY day
+    ORDER BY day`;
+
+  async function queryDaily(event: string): Promise<Map<string, number>> {
+    const res = await fetch(`${host}/api/projects/${projectId}/query/`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify({
+        query: {
+          kind: "HogQLQuery",
+          query: HOGQL,
+          // Parameterized, not interpolated — the slug reaches this from a
+          // query string.
+          values: { event, urls, days },
+        },
+      }),
+    });
 
-    if (!res.ok) throw new Error(`PostHog ${eventId} query failed: ${res.status}`);
-    return res.json();
+    if (!res.ok) {
+      throw new Error(
+        `PostHog query failed for ${event}: ${res.status} ${await res.text()}`,
+      );
+    }
+
+    const body = (await res.json()) as { results?: [string, number][] };
+    return new Map((body.results ?? []).map(([day, c]) => [day, Number(c)]));
   }
 
   try {
-    const [views, clicks] = await Promise.all([
-      queryTrend("$pageview"),
+    const [viewsByDay, clicksByDay] = await Promise.all([
+      queryDaily("$pageview"),
       // Clicks were captured on public pages but never queried, so the single
       // most useful metric for a link-in-bio product was invisible to its owner.
-      queryTrend("link_click").catch(() => null),
+      queryDaily("link_click").catch(() => new Map<string, number>()),
     ]);
 
-    const daily: number[] = views.result?.[0]?.data ?? Array(days).fill(0);
-    const labels: string[] = views.result?.[0]?.labels ?? emptyLabels;
-    const total = daily.reduce((sum: number, n: number) => sum + n, 0);
+    // PostHog returns only days that have events; expand to a dense series so
+    // the sparkline's bars line up with its labels.
+    const daily: number[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      daily.push(viewsByDay.get(d.toISOString().slice(0, 10)) ?? 0);
+    }
 
-    const clickDaily: number[] = clicks?.result?.[0]?.data ?? [];
-    const clickTotal = clickDaily.reduce(
-      (sum: number, n: number) => sum + n,
-      0,
-    );
+    const total = daily.reduce((sum, n) => sum + n, 0);
+    const clickTotal = [...clicksByDay.values()].reduce((sum, n) => sum + n, 0);
 
     return NextResponse.json({
       total,
       clicks: clickTotal,
       daily,
-      labels,
+      labels: emptyLabels,
       days,
       configured: true,
     });

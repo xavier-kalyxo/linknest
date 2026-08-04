@@ -155,8 +155,9 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
         </div>
       )}
 
-      {/* Main editor area */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Main editor area. <main> so the landmark tree has a main region to
+          bypass the header to — this is the route with repeated navigation. */}
+      <main className="flex flex-1 overflow-hidden">
         {/* Left panel — editing controls */}
         <div className="flex w-full flex-col overflow-y-auto border-r border-gray-200 bg-white md:w-[420px]">
           {/* Tabs */}
@@ -220,7 +221,7 @@ export function EditorShell({ page, initialBlocks, plan }: EditorShellProps) {
         <div className="hidden flex-1 items-center justify-center bg-gray-100 p-8 md:flex">
           <LivePreview page={pageState} blocks={blocksState} theme={displayTheme} />
         </div>
-      </div>
+      </main>
 
       {/* Mobile preview overlay */}
       <MobilePreviewOverlay page={pageState} blocks={blocksState} theme={displayTheme} />

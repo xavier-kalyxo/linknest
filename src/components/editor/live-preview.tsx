@@ -83,7 +83,7 @@ export function LivePreview({ page, blocks, theme }: LivePreviewProps) {
                 style={{
                   fontFamily: "var(--ln-font-heading)",
                   fontWeight: "var(--ln-font-weight-heading)",
-                  fontSize: `calc(var(--ln-font-size-base) * 1.2)`,
+                  fontSize: "var(--ln-font-size-h1)",
                   color: "var(--ln-color-text)",
                 }}
               >

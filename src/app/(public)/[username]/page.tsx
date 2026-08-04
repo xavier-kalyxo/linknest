@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { pages, blocks, workspaces } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { TemplateRenderer } from "@/components/templates/template-renderer";
+import { PageBeacon } from "@/components/analytics/page-beacon";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { getPublicPageUrl, normalizeSlug } from "@/lib/slugs";
 import { publicPageTag } from "@/lib/cache-tags";
@@ -114,11 +115,14 @@ export default async function PublicPage({ params }: Props) {
   const showBadge = !(isPro && theme?.hideBranding);
 
   return (
-    <TemplateRenderer
-      page={page}
-      blocks={pageBlocks}
-      showBadge={showBadge}
-      showReport
-    />
+    <>
+      <TemplateRenderer
+        page={page}
+        blocks={pageBlocks}
+        showBadge={showBadge}
+        showReport
+      />
+      <PageBeacon slug={page.slug} />
+    </>
   );
 }

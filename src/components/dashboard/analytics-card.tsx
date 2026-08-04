@@ -17,6 +17,19 @@ type State =
   | { status: "error"; message: string }
   | { status: "ready"; data: AnalyticsData };
 
+/**
+ * Evenly sample up to `count` labels (always including first and last), so the
+ * axis stays readable whether the range is 7 days or 90.
+ */
+function pickTicks(labels: string[], count: number): string[] {
+  if (labels.length <= count) return labels;
+  const step = (labels.length - 1) / (count - 1);
+  return Array.from(
+    { length: count },
+    (_, i) => labels[Math.round(i * step)] ?? "",
+  );
+}
+
 export function AnalyticsCard({
   slug,
   title,
@@ -80,6 +93,7 @@ export function AnalyticsCard({
 
   const { data } = state;
   const max = Math.max(...data.daily, 1);
+  const tickLabels = pickTicks(data.labels, 5);
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6">
@@ -103,31 +117,38 @@ export function AnalyticsCard({
           </div>
         </div>
         {!data.configured && (
+          // Not "not set up yet" — that reads as the account owner's to-do,
+          // when it is actually a server-side configuration gap they cannot fix.
           <span className="text-xs text-gray-400">
-            Analytics not set up yet
+            Analytics temporarily unavailable
           </span>
         )}
       </div>
 
-      {/* Sparkline */}
-      <div className="flex items-end gap-1" style={{ height: 48 }}>
+      {/* Sparkline. Bars stay 1-per-day, but labels are thinned to a handful —
+          a 90-day Pro range printed one label per bar produced ~90 overlapping
+          dates that read as a grey smear. */}
+      <div
+        className="flex items-end gap-px"
+        style={{ height: 48 }}
+        role="img"
+        aria-label={`${data.total ?? 0} views over the last ${data.days} days`}
+      >
         {data.daily.map((value, i) => (
-          <div key={i} className="flex flex-1 flex-col items-center gap-1">
-            <div
-              className="w-full rounded-sm bg-black transition-all"
-              style={{
-                height: `${Math.max((value / max) * 48, 2)}px`,
-                opacity: value > 0 ? 1 : 0.15,
-              }}
-            />
-          </div>
+          <div
+            key={i}
+            className="flex-1 rounded-sm bg-black transition-all"
+            style={{
+              height: `${Math.max((value / max) * 48, 2)}px`,
+              opacity: value > 0 ? 1 : 0.15,
+            }}
+            title={`${data.labels[i] ?? ""}: ${value}`}
+          />
         ))}
       </div>
-      <div className="mt-1 flex gap-1">
-        {data.labels.map((label, i) => (
-          <span key={i} className="flex-1 text-center text-[9px] text-gray-400">
-            {label}
-          </span>
+      <div className="mt-1 flex justify-between text-[10px] text-gray-400">
+        {tickLabels.map((label, i) => (
+          <span key={i}>{label}</span>
         ))}
       </div>
     </div>

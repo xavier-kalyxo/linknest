@@ -108,3 +108,20 @@ body {
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Global reduced-motion escape hatch.
+   Motion preferences were only honoured on marketing pages, so public link
+   pages and the editor kept animating — including the link-block hover scale
+   that every visitor triggers. This covers all of them without touching
+   components. The .reveal / .animate-float blocks above stay: they also reset
+   opacity and transform, which this does not. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

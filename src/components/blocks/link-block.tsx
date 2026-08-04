@@ -24,6 +24,13 @@ export function LinkBlock({ block, resolvedStyle }: LinkBlockProps) {
     boxShadow: "var(--ln-btn-shadow)",
     backdropFilter: "var(--ln-btn-backdrop)",
     WebkitBackdropFilter: "var(--ln-btn-backdrop)",
+    // Two-tone focus ring. Deliberately NOT built from --ln-color-accent: on
+    // several templates the accent is byte-identical to the button's resting
+    // border (so focus would look the same as blur), and the accent is
+    // user-editable, meaning a page owner could tune their own focus indicator
+    // into invisibility. Text-on-background always contrasts by construction,
+    // and the outer halo guarantees a visible edge whichever side it lands on.
+    outlineColor: "var(--ln-color-text)",
   };
 
   return (
@@ -32,7 +39,7 @@ export function LinkBlock({ block, resolvedStyle }: LinkBlockProps) {
       target="_blank"
       rel="noopener noreferrer me"
       data-link-id={block.id}
-      className="block w-full text-center transition-transform hover:scale-[1.02]"
+      className="block w-full text-center transition-transform hover:scale-[1.02] focus-visible:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[box-shadow:0_0_0_4px_var(--ln-color-bg)]"
       style={resolvedStyle ? { ...baseStyle, ...resolvedStyle } : baseStyle}
     >
       {block.label || block.url}

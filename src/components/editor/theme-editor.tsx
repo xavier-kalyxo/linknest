@@ -43,10 +43,24 @@ export function ThemeEditor({
 
   const handleChange = useCallback(
     (updates: Partial<ThemeTokens>) => {
+      // Templates like Glass paint a gradient over the background colour
+      // (TemplateRenderer sets backgroundImage when backgroundEffect ===
+      // "gradient"). Picking a Background colour while that is active changed
+      // a token nobody could see. Choosing a colour now implies a solid
+      // background — the gradient is one toggle away.
+      if (updates.colorBackground && theme.backgroundEffect === "gradient") {
+        onThemeChange({ ...updates, backgroundEffect: "none" });
+        return;
+      }
       onThemeChange(updates);
     },
-    [onThemeChange],
+    [onThemeChange, theme.backgroundEffect],
   );
+
+  const templateGradient = TEMPLATES.find((t) => t.id === templateId)
+    ?.defaultTheme.backgroundGradient;
+  const gradient = theme.backgroundGradient ?? templateGradient;
+  const usingGradient = theme.backgroundEffect === "gradient" && !!gradient;
 
   return (
     <div className="space-y-6">
@@ -127,6 +141,50 @@ export function ThemeEditor({
       </section>
 
       {/* Color palette */}
+      {/* Background style — only meaningful when the template ships a gradient.
+          Without this control the gradient was invisible in the editor yet
+          covered whatever background colour the user picked. */}
+      {gradient && (
+        <section>
+          <h3 className="mb-3 text-sm font-semibold">Background</h3>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleChange({ backgroundEffect: "none" })}
+              aria-pressed={!usingGradient}
+              className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                !usingGradient
+                  ? "border-black bg-black text-white"
+                  : "border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              Solid color
+            </button>
+            <button
+              onClick={() =>
+                onThemeChange({
+                  backgroundEffect: "gradient",
+                  backgroundGradient: gradient,
+                })
+              }
+              aria-pressed={usingGradient}
+              className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                usingGradient
+                  ? "border-black bg-black text-white"
+                  : "border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              Gradient
+            </button>
+          </div>
+          {usingGradient && (
+            <p className="mt-2 text-xs text-gray-400">
+              The gradient covers your background color. Switch to Solid color
+              to use it.
+            </p>
+          )}
+        </section>
+      )}
+
       <section>
         <h3 className="mb-3 text-sm font-semibold">Colors</h3>
         {plan === "free" ? (

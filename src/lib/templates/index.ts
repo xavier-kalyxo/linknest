@@ -110,7 +110,7 @@ const coralReef: TemplateDefinition = {
     colorPrimary: "#C2410C",
     colorSecondary: "#FB923C",
     colorText: "#431407",
-    colorTextMuted: "#9A7568",
+    colorTextMuted: "#836358",
     colorAccent: "#FB923C",
     fontHeading: "Georgia, serif",
     fontBody: "Inter, system-ui, sans-serif",
@@ -282,7 +282,10 @@ const glass: TemplateDefinition = {
     pagePaddingY: 48,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    // 0.30 rather than 0.10: at 10% the border composited to ~1.4:1 against its
+    // own fill, so the button edge was effectively invisible against the
+    // gradient. 30% brings it to ~3:1 while keeping the glassmorphism look.
+    borderColor: "rgba(255, 255, 255, 0.30)",
     buttonStyle: "glass",
     buttonRadius: 12,
     buttonPaddingX: 24,

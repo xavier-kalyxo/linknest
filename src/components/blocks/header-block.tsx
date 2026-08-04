@@ -10,7 +10,7 @@ export function HeaderBlock({ block }: { block: Block }) {
       style={{
         fontFamily: "var(--ln-font-heading)",
         fontWeight: "var(--ln-font-weight-heading)",
-        fontSize: `calc(var(--ln-font-size-base) * 1.25)`,
+        fontSize: "var(--ln-font-size-h2)",
         color: "var(--ln-color-text)",
         lineHeight: 1.3,
       }}

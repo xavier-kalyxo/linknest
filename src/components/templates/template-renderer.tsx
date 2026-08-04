@@ -72,28 +72,44 @@ export function TemplateRenderer({
           paddingBottom: "var(--ln-page-py)",
         }}
       >
-        {/* Avatar + Bio */}
-        <PageHeader page={page} />
+        {/* The page had no landmarks at all bar the footer. <main> stays inside
+            this container so it keeps the theme's max-width and padding, and the
+            <footer> stays OUTSIDE it — a footer nested in <main> maps to
+            "generic" rather than "contentinfo". */}
+        <main>
+          {/* Avatar + Bio */}
+          <PageHeader page={page} />
 
-        {/* Blocks */}
-        <BlockLayout layout={layout} blocks={blocks} theme={theme} />
+          {/* Blocks */}
+          <BlockLayout layout={layout} blocks={blocks} theme={theme} />
+        </main>
 
         {/* Badge + Report */}
         <footer className="mt-16 flex flex-col items-center gap-2 text-center">
           {showBadge && (
             <Link
               href="/"
-              className="text-xs transition-opacity hover:opacity-80"
-              style={{ color: "var(--ln-color-text-muted)" }}
+              className="rounded text-xs transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{
+                color: "var(--ln-color-text-muted)",
+                outlineColor: "var(--ln-color-text)",
+              }}
             >
               Made with LinkNest
             </Link>
           )}
           {showReport && (
+            // No inline opacity: at 0.5 this composited to 1.8–2.7:1 against
+            // every template background, well under the 4.5:1 AA minimum. The
+            // inline value also beat the `hover:opacity-80` class, so the hover
+            // state never fired. 14px is the spec's own minimum text size.
             <a
               href={`/report/${page.id}`}
-              className="text-[10px] transition-opacity hover:opacity-80"
-              style={{ color: "var(--ln-color-text-muted)", opacity: 0.5 }}
+              className="rounded text-sm transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{
+                color: "var(--ln-color-text-muted)",
+                outlineColor: "var(--ln-color-text)",
+              }}
             >
               Report this page
             </a>
@@ -125,7 +141,7 @@ function PageHeader({ page }: { page: Page }) {
         style={{
           fontFamily: "var(--ln-font-heading)",
           fontWeight: "var(--ln-font-weight-heading)",
-          fontSize: `calc(var(--ln-font-size-base) * 1.25)`,
+          fontSize: "var(--ln-font-size-h1)",
           color: "var(--ln-color-text)",
         }}
       >

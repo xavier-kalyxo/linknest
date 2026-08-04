@@ -157,6 +157,11 @@ export function themeToCssVars(theme: ThemeTokens): Record<string, string> {
     "--ln-font-heading": theme.fontHeading,
     "--ln-font-body": theme.fontBody,
     "--ln-font-size-base": `${theme.fontSizeBase}px`,
+    // A real heading scale. The page title and a header block both rendered at
+    // base * 1.25, so the h1 had no visual precedence over an h2 — the ratio
+    // was exactly 1.0 on every template.
+    "--ln-font-size-h1": `${Math.round(theme.fontSizeBase * 1.75)}px`,
+    "--ln-font-size-h2": `${Math.round(theme.fontSizeBase * 1.25)}px`,
     "--ln-font-weight-heading": `${theme.fontWeightHeading}`,
     "--ln-line-height-body": `${theme.lineHeightBody}`,
 
@@ -244,7 +249,7 @@ export const COLOR_PALETTES: ColorPalette[] = [
       colorPrimary: "#8B4513",
       colorSecondary: "#E07C4F",
       colorText: "#3D2B1F",
-      colorTextMuted: "#8B7355",
+      colorTextMuted: "#856E52",
       colorAccent: "#E07C4F",
       borderColor: "#E8D5C4",
     },
@@ -258,7 +263,7 @@ export const COLOR_PALETTES: ColorPalette[] = [
       colorPrimary: "#1E3A5F",
       colorSecondary: "#3B82F6",
       colorText: "#1A2A3A",
-      colorTextMuted: "#64748B",
+      colorTextMuted: "#627288",
       colorAccent: "#3B82F6",
       borderColor: "#CBD5E1",
     },
@@ -272,7 +277,7 @@ export const COLOR_PALETTES: ColorPalette[] = [
       colorPrimary: "#831843",
       colorSecondary: "#EC4899",
       colorText: "#2D1B28",
-      colorTextMuted: "#9D7A8A",
+      colorTextMuted: "#876977",
       colorAccent: "#EC4899",
       borderColor: "#F3D1D8",
     },
