@@ -58,7 +58,16 @@ export async function getUserWorkspace(userId: string) {
 /** Feature key used by entitlement_overrides to comp an entire plan. */
 export const PLAN_OVERRIDE_FEATURE = "plan";
 
-function resolvePlanOverride(value: unknown): string | null {
+/**
+ * Resolve a comped plan from an entitlement_overrides row value.
+ *
+ * Exported because more than one query resolves a plan. When only
+ * getUserWorkspace() applied overrides, the public page — which reads
+ * `workspaces.plan` through its own join — disagreed with the editor: a comped
+ * Pro account could tick "hide the badge", have it saved and accepted, and
+ * still see the badge on the live page.
+ */
+export function resolvePlanOverride(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
   const plan = (value as { plan?: unknown }).plan;
   return plan === "pro" || plan === "free" ? plan : null;

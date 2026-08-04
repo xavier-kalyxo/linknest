@@ -2,12 +2,21 @@ import { notFound } from "next/navigation";
 import { unstable_cache } from "next/cache";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { pages, blocks, workspaces } from "@/lib/db/schema";
-import { eq, asc } from "drizzle-orm";
+import {
+  pages,
+  blocks,
+  workspaces,
+  entitlementOverrides,
+} from "@/lib/db/schema";
+import { eq, and, asc } from "drizzle-orm";
 import { TemplateRenderer } from "@/components/templates/template-renderer";
 import { PageBeacon } from "@/components/analytics/page-beacon";
 import type { ThemeTokens } from "@/lib/templates/theme";
 import { getPublicPageUrl, normalizeSlug } from "@/lib/slugs";
+import {
+  resolvePlanOverride,
+  PLAN_OVERRIDE_FEATURE,
+} from "@/lib/queries";
 import { publicPageTag } from "@/lib/cache-tags";
 import { SITE_URL } from "@/lib/site";
 
@@ -33,15 +42,30 @@ async function getPageData(slug: string) {
         .select({
           page: pages,
           plan: workspaces.plan,
+          planOverride: entitlementOverrides.value,
         })
         .from(pages)
         .innerJoin(workspaces, eq(pages.workspaceId, workspaces.id))
+        // Comped plans live in entitlement_overrides, not in workspaces.plan.
+        // Without this join the render path disagreed with the editor: a comped
+        // Pro account could hide the badge, have it saved, and still see it.
+        .leftJoin(
+          entitlementOverrides,
+          and(
+            eq(entitlementOverrides.workspaceId, workspaces.id),
+            eq(entitlementOverrides.feature, PLAN_OVERRIDE_FEATURE),
+          ),
+        )
         // Slugs are stored normalized; lowercasing here means a shared link
         // with different capitalisation still resolves instead of 404ing.
         .where(eq(pages.slug, normalized))
         .limit(1);
 
-      return result[0] ?? null;
+      const row = result[0];
+      if (!row) return null;
+
+      const { planOverride, ...rest } = row;
+      return { ...rest, plan: resolvePlanOverride(planOverride) ?? rest.plan };
     },
     ["public-page", normalized],
     { tags: [publicPageTag(normalized)], revalidate: 300 },
