@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { publicPageTag } from "@/lib/cache-tags";
@@ -11,6 +12,14 @@ import {
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import type Stripe from "stripe";
+
+/**
+ * Raised when an event can never succeed no matter how often it is retried —
+ * e.g. it references a workspace that has since been deleted. These are
+ * acknowledged (200) and reported, rather than retried into an endpoint
+ * suspension.
+ */
+class UnprocessableEventError extends Error {}
 
 /**
  * Subscription statuses that keep Pro entitlements.
@@ -109,8 +118,21 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     console.error("Stripe webhook error:", err);
-    // Release the claim so Stripe's retry can reprocess this event; leaving it
-    // marked would dedupe the retry away and lose the update permanently.
+    Sentry.captureException(err, {
+      tags: { webhook: event.type },
+      extra: { eventId: event.id },
+    });
+
+    // A permanently unprocessable event must NOT be retried. Returning 500
+    // here for every failure meant an event referencing, say, a workspace that
+    // no longer exists retried until Stripe disabled the endpoint outright —
+    // taking real upgrades down with it. Only transient faults get a 500.
+    if (err instanceof UnprocessableEventError) {
+      return NextResponse.json({ received: true, skipped: err.message });
+    }
+
+    // Transient: release the claim so Stripe's retry can reprocess this event.
+    // Leaving it marked would dedupe the retry away and lose the update.
     await db
       .delete(stripeProcessedEvents)
       .where(eq(stripeProcessedEvents.eventId, event.id))
@@ -131,11 +153,24 @@ async function handleCheckoutComplete(event: Stripe.Event) {
   const workspaceId = session.metadata?.workspaceId;
 
   if (!workspaceId || !session.subscription) {
-    // Nothing to attach this payment to. Throwing (rather than returning) keeps
-    // the event unclaimed so it can be retried and investigated, instead of
-    // silently deduping away a checkout the customer was charged for.
-    throw new Error(
+    // Nothing to attach this payment to, and no retry will change that. Report
+    // it loudly — a customer may have been charged without being upgraded.
+    throw new UnprocessableEventError(
       `checkout.session.completed ${session.id} has no workspaceId metadata or subscription`,
+    );
+  }
+
+  // Confirm the workspace still exists. Without this the insert below fails on
+  // a foreign key, which looked like a transient error and retried forever.
+  const [workspace] = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId))
+    .limit(1);
+
+  if (!workspace) {
+    throw new UnprocessableEventError(
+      `checkout.session.completed ${session.id} references workspace ${workspaceId}, which no longer exists`,
     );
   }
 
