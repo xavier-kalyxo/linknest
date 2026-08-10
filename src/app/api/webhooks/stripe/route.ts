@@ -117,22 +117,35 @@ export async function POST(request: NextRequest) {
         break;
     }
   } catch (err) {
-    console.error("Stripe webhook error:", err);
-    Sentry.captureException(err, {
-      tags: { webhook: event.type },
-      extra: { eventId: event.id },
-    });
-
     // A permanently unprocessable event must NOT be retried. Returning 500
     // here for every failure meant an event referencing, say, a workspace that
     // no longer exists retried until Stripe disabled the endpoint outright —
-    // taking real upgrades down with it. Only transient faults get a 500.
+    // taking real upgrades down with it. Test-mode cleanup is expected during
+    // development, so keep it out of Sentry's high-priority exception stream.
+    // The same condition in live mode can mean a customer paid without being
+    // upgraded, and must still page us even though Stripe receives a 200.
     if (err instanceof UnprocessableEventError) {
+      if (event.livemode) {
+        console.error("Stripe webhook error:", err);
+        Sentry.captureException(err, {
+          tags: { webhook: event.type, disposition: "acknowledged" },
+          extra: { eventId: event.id },
+        });
+      } else {
+        console.warn("[stripe] Skipped unprocessable test event:", err.message);
+      }
+
       return NextResponse.json({ received: true, skipped: err.message });
     }
 
     // Transient: release the claim so Stripe's retry can reprocess this event.
     // Leaving it marked would dedupe the retry away and lose the update.
+    console.error("Stripe webhook error:", err);
+    Sentry.captureException(err, {
+      tags: { webhook: event.type, disposition: "retry" },
+      extra: { eventId: event.id },
+    });
+
     await db
       .delete(stripeProcessedEvents)
       .where(eq(stripeProcessedEvents.eventId, event.id))
